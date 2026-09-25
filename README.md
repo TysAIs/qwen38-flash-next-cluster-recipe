@@ -308,7 +308,7 @@ anchored or sha256-checked edit that refuses to apply twice and fails the build 
 
 The Dockerfile, the patch scripts and the build ledger live in the myllmbox repo under
 [`recipes/qwen38-flash-next-cluster/`](https://github.com/bilikaz/myllmbox-runner/tree/main/recipes/qwen38-flash-next-cluster)
-— rebuild and diff it yourself. Digest: `sha256:DIGEST-PENDING-PUSH`
+— rebuild and diff it yourself. Digest: `sha256:861ac752164e0d723c5eff3f876586c6678c26ad4a516112c48745f6a101ff4d`
 (v5, vLLM 0.29 + hibrid48, the v3 kit: `sha256:49b57ee9920b7132cd0b4d3e351c5ae96829c4094594981b8d9c711a56b65360`;
 v4, vendor pin + hibrid47 + fp8 KV: `sha256:91423fc292d527935b2f0363cc614305b1c1a00dc56981953a723abe1b50ed2e`).
 
