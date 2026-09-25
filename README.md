@@ -7,36 +7,38 @@ and [`hibrid48-uncensored`](https://huggingface.co/myllmbox/Qwen3.8-Flash-Next-h
 body, no refusals, no guardrails — gated, research / private use). Same stack. To switch: in `recipe.yaml`
 comment the active `model:` line and uncomment the other, then `./run.sh`. Details in [Which checkpoint](#which-checkpoint).
 
-Two boxes, one model, RDMA. **22 engine steps/s**: 92 tok/s single-stream writing code, **107 tok/s peak**. Three commands.
+Two boxes, one model, RDMA. **106 tok/s single-stream (121 peak), 817 tok/s at 64 streams (883 peak), a 2.45M-token KV
+pool** — and it boots in about four minutes. Three commands.
 
-## Quality (measured on this serve, thinking on)
+## Measured performance (this exact stack, 2× DGX Spark, RDMA, K=5, `vm.compaction_proactiveness=0`)
 
-[lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) run against the running two-Spark serve of
-hibrid48 and hibrid48-uncensored (2026-09-13), **thinking on** — the mode the model is served in — at temperature 0.6, top-p 0.95, top-k 20 (the model
-card recommends 1.0 / 0.95 / 20 for thinking; a card-faithful pass at 1.0 is a separate run), a 32k-token budget per answer, 16
-requests in flight. Qwen publishes no numbers for these four tests — its card reports LiveCodeBench v6 91.9, GPQA Diamond 91.7,
-IFBench 81.3, SWE-bench Pro 62.5 — so there is no official row to compare against; GPQA Diamond is the one overlap still to run. HumanEval is complete; the
-other tasks use a fixed 200-question subset (seed 123123123), the same questions on every checkpoint we compare.
+**v4 ladder (2026-09-24, vLLM 0.30, image v6, `hibrid48`, 41G bf16 pin, 64 seats, Marlin MoE)** — this kit exactly as shipped,
+same prompt and the same windows as the tables below, steady-state averages of 3–6 runs per rung. Thinking off.
 
-| task | questions | hibrid48 | hibrid48-uncensored |
-|---|---|---|---|
-| HumanEval pass@1 | 164 | **95.7** | **94.5** |
-| GSM8K exact match | 200 | **98.0** | **97.5** |
-| IFEval prompt-level strict / instruction-level strict | 200 | **91.5** / 93.4 | **94.5** / 96.2 |
-| MMLU-Pro (14 subjects, sampled by size) | 200 | **84.9** | **82.9** |
-| answers that ran into the 32k budget while thinking (count as wrong) | 763 | 11 | 6 |
+| concurrent requests | **PEAK tok/s** (v3 → v4) | average tok/s | per-stream (v3 → v4) | acceptance |
+|---|---|---|---|---|
+| 1 | 107 → **121** | 106 | 92 → **106** | 5.05 |
+| 2 | 160 → **180** | 173 | 75 → **86** | 5.14 |
+| 4 | 237 → **265** | 252 | 58 → **63** | 5.10 |
+| 8 | 349 → **388** | 364 | 42 → **46** | 5.13 |
+| 16 | 474 → **508** | 492 | 28 → **31** | 5.11 |
+| 24 | 559 → **614** | 575 | 22 → **24** | 5.14 |
+| 32 | 589 → **708** | 652 | 18 → **20** | 5.15 |
+| 48 | 674\* → **795** | 738 | 13.2\* → **15** | 5.14 |
+| 64 | — → **883** | 817 | — → **13** | 5.10 |
 
-Same 763 questions on both checkpoints, 91 and 75 minutes. The IFEval gain is the one difference larger than the two subsets'
-sampling error; the other deltas are one to four questions each. The abliterated body also thinks shorter (median reasoning
-−8 %, 90th percentile −27 %) and runs away half as often. The runaway rate is itself a number to compare between checkpoints. Subsets of 200 carry about ±3 points of sampling noise;
-published leaderboard numbers use other prompts, few-shot counts and full sets, so treat them as a sanity band, not a column.
-The runner (`bench/quality/` in the myllmbox repo: harness driver, answer extraction that reads a chat model's final answer,
-and a side-by-side table tool) works against any OpenAI-compatible endpoint — rerun it and count. hibrid47 on the same
-questions is the pending A/B; until then these are the model's numbers, not a measured cost of the 4-bit head.
+\* v3 has no 48-stream row; the value is v2's (hibrid47, vendor pin, 28G bf16 pin). No earlier kit seated 64.
 
-## Measured performance (this exact stack, 2× DGX Spark, RDMA, K=4, `vm.compaction_proactiveness=0`)
+Reading it: **every rung is 8–16 % faster than v3.** Each engine step now drafts five tokens instead of four and keeps
+5.1 of a possible 6 instead of 4.2 of 5 — the drafter's tokens are sampled from its own distribution and verified against the model's (see [What changed](#what-changed)), which
+is what moved acceptance. Single-stream, v3's **peak** of 107 is now v4's **average**. The top rung is new: 817 tok/s at 64
+streams, 883 at peak. With thinking on (a full request: reasoning, then the answer), one stream averages ~81 tok/s and the
+code phase peaks at 121 (measured on the same image and flags before this ladder; v3: 79.5 over the same kind of request).
+The pool is the limit at the top: 64 streams of this test filled it to 99 % after about three minutes, after which new
+tokens wait for a request to finish. 48 streams peaked at 81 %.
 
-**v3 ladder (2026-09-13, hibrid48 on vLLM 0.29, 28G bf16 pin, Marlin MoE)** — same prompt, same windows, same rules as the v2 table below (rungs 2–32 measured on the v3 kit boot; c=48 pending).
+
+**v3 ladder (2026-09-13, hibrid48 on vLLM 0.29, 28G bf16 pin, Marlin MoE)** — kept as the reference v4 is measured against; same prompt, same windows, same rules as the v2 table below (rungs 2–32 measured on the v3 kit boot; c=48 pending).
 
 | concurrent requests | **PEAK tok/s** | average tok/s | per-stream | engine steps/s (v2 → v3) | acceptance |
 |---|---|---|---|---|---|
@@ -79,8 +81,58 @@ seat and 17 tok/s per stream (rungs 1–32 were measured at a 25G pin, c=48 at t
 their conditions on purpose — the tools that produced them (`bench/test.py`, `bench/summary.py`, `bench/accept.py`
 in the myllmbox repo) are yours to rerun.
 
+## Quality (measured on this serve, thinking on)
+
+[lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) run against the running two-Spark serve of
+hibrid48 and hibrid48-uncensored (2026-09-13), **thinking on** — the mode the model is served in — at temperature 0.6, top-p 0.95, top-k 20 (the model
+card recommends 1.0 / 0.95 / 20 for thinking; a card-faithful pass at 1.0 is a separate run), a 32k-token budget per answer, 16
+requests in flight. Qwen publishes no numbers for these four tests — its card reports LiveCodeBench v6 91.9, GPQA Diamond 91.7,
+IFBench 81.3, SWE-bench Pro 62.5 — so there is no official row to compare against; GPQA Diamond is the one overlap still to run. HumanEval is complete; the
+other tasks use a fixed 200-question subset (seed 123123123), the same questions on every checkpoint we compare.
+
+| task | questions | hibrid48 | hibrid48-uncensored |
+|---|---|---|---|
+| HumanEval pass@1 | 164 | **95.7** | **94.5** |
+| GSM8K exact match | 200 | **98.0** | **97.5** |
+| IFEval prompt-level strict / instruction-level strict | 200 | **91.5** / 93.4 | **94.5** / 96.2 |
+| MMLU-Pro (14 subjects, sampled by size) | 200 | **84.9** | **82.9** |
+| answers that ran into the 32k budget while thinking (count as wrong) | 763 | 11 | 6 |
+
+Same 763 questions on both checkpoints, 91 and 75 minutes. The IFEval gain is the one difference larger than the two subsets'
+sampling error; the other deltas are one to four questions each. The abliterated body also thinks shorter (median reasoning
+−8 %, 90th percentile −27 %) and runs away half as often. The runaway rate is itself a number to compare between checkpoints. Subsets of 200 carry about ±3 points of sampling noise;
+published leaderboard numbers use other prompts, few-shot counts and full sets, so treat them as a sanity band, not a column.
+The runner (`bench/quality/` in the myllmbox repo: harness driver, answer extraction that reads a chat model's final answer,
+and a side-by-side table tool) works against any OpenAI-compatible endpoint — rerun it and count. hibrid47 on the same
+questions is the pending A/B; until then these are the model's numbers, not a measured cost of the 4-bit head.
+
+**v4 check (vLLM 0.30, 2026-09-23):** GSM8K rerun on the v4 image, hibrid48-uncensored, 400 questions (seed 123123123),
+thinking on, same sampling, 32 in flight — **97.75 % and 97.25 %** on two runs of the same questions, 0 answers truncated.
+The table above is the v3 serve's; the v4 engine change did not move this one.
 
 ## What changed
+
+**v4 (2026-09-24): vLLM 0.30, five draft tokens, a 2.45M-token pool and 64 seats.** The engine moved to upstream vLLM
+0.30, and speculative decoding was retuned on it:
+
+1. **Five draft tokens, sampled.** The drafter now proposes 5 tokens instead of 4 and *samples* them from its own
+   distribution (`draft_sample_method: probabilistic`) instead of always taking its top guess; the model checks them with
+   the exact probability-ratio test and block verification. Output quality cannot change — the text follows the model's
+   own distribution either way — but more drafts survive: 5.1 accepted per step on code (v3: 4.2 of 5). +15 % single-stream,
+   +16 % at 32 streams. Measured one knob at a time: the sampled draft is the gain; block verification is neutral on top.
+2. **NCCL on four channels** (`NCCL_MAX_NCHANNELS=4`). NCCL builds 64 channels on this pair of boxes and splits every large
+   message across all of them; the GB10 has no GPUDirect RDMA, so each piece is copied through host memory. Four channels
+   made the per-layer all-reduce 3× faster at 32–64 streams: +10 % at 32 streams, +7 % at 64, nothing at one.
+3. **Half the n-gram table per box.** On 0.30 splitting it across the two boxes costs nothing measurable (it did on 0.29),
+   and the 13.4G it frees per box goes to the KV pool: 28G → 41G per box, 1.71M → **2,450,356 pooled tokens**, 9.35× the full
+   262K window. 64 seats instead of 32.
+4. **Boots in about four minutes instead of about seventeen:** 0.30 serves this model without torch.compile, so the
+   per-boot model compilation is gone.
+
+The image also carries the fused multi-step draft for this model's attention (proposed upstream as vllm-project/vllm#58449;
++1–3 % engine steps at 1–12 streams), and the kit reads each box's RoCE GID index at launch — the index moves after a
+reboot or link flap, and a stale one fails NCCL with "unhandled system error". fp8 KV is not in the v4 image. v3 stays
+available: `git checkout v3` (image `…-cluster-vllm:v5`, vLLM 0.29, full table per box, 28G pin, 32 seats, fp8 KV opt-in).
 
 **v3 (2026-09-13): vLLM 0.29 and a 4-bit output head.** Two changes, one number: the serve moved from the vendor's SM121 vLLM
 pin to upstream vLLM 0.29 (the model is upstream now), and the checkpoint's 1.18 GiB bf16 output head — read ~5.4 times per
@@ -116,8 +168,8 @@ cd qwen38-flash-next-cluster-recipe
 
 `./stop.sh` stops both boxes. `./view.sh` shows live stats plus the RDMA proof. Requirements: two DGX Sparks
 with docker + the NVIDIA container runtime, connected by their ConnectX ports (a direct cable or a switch),
-ssh from the head to the worker (a password once — `setup.sh` installs a key). First boot reaches healthy in
-~10 minutes after the weights are on both boxes; later boots are faster.
+ssh from the head to the worker (a password once — `setup.sh` installs a key). With the weights on both boxes, a boot
+reaches healthy in about four minutes (weights ~97 s, profile + KV + graph capture ~67 s).
 
 **What `run.sh` does the first time:** no `cluster.env` yet → it runs [`setup.sh`](setup.sh), which asks for the
 worker's ssh address, probes both boxes (interfaces, RDMA devices, GPU, docker), **discovers the interconnect**
@@ -145,7 +197,7 @@ Switching is comment one line, uncomment the other, `./run.sh`:
 
 | `model:` | what it is | speed on this kit |
 |---|---|---|
-| `myllmbox/Qwen3.8-Flash-Next-hibrid48` (default) | the base model, calibrated body, NVFP4 output head — the checkpoint the v3 numbers were measured on | 22.0 steps/s, 92 tok/s at c=1, **107** peak |
+| `myllmbox/Qwen3.8-Flash-Next-hibrid48` (default) | the base model, calibrated body, NVFP4 output head — the checkpoint the v3 and v4 ladders were measured on | v4: 106 tok/s at c=1, **817** tok/s at 64 streams |
 | `myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored` | OrcaRouter's abliterated (refusal-removed) body with the same head — **no guardrails**; research, red-teaming, private use behind your own moderation | same head, same stack, same speed; quality table above (IFEval 94.5, HumanEval 94.5, GSM8K 97.5, MMLU-Pro 82.9) |
 
 The uncensored repo is **gated**: open its Hugging Face page, accept the agreement, then `hf auth login` (or `export
@@ -173,8 +225,9 @@ boot looks hung at 100 % CPU. The kit never asks for your password; it stabilise
 - **waits** after removing old containers until both boxes report ≥ 100 GB available (unified memory takes
   30–60 s to come back after a container dies; launching earlier gives a phantom "CUDA out of memory"),
 - **evicts its own checkpoint files from the page cache** before launch (`dd iflag=nocache`, no privileges),
-- the image's loader **drops each shard from the cache as soon as it has been consumed**, so the cache never
-  balloons during the load itself.
+- the weights load with `fastsafetensors` (`load-format` in `recipe.yaml`), which booted cleanly on every v4 launch; with
+  vLLM's default loader instead, the image **drops each shard from the cache as soon as it has been consumed**, so the
+  cache never balloons during the load itself.
 
 Nothing to do on your side.
 
@@ -195,29 +248,40 @@ this for you (it needs root); it takes effect immediately, no restart.
 
 ## Tuning (recipe.yaml)
 
-- **`kv-cache-memory`** (bytes, per box): 28G default with the full table on each box (~65G of weights per box).
-  Leaves ~5G of host headroom per box after graph capture — check `free -g` on both boxes after the first boot and
-  back off to 25G if either shows swap in use. Do **not** take vLLM's "fully utilize" suggestion: unified memory
-  over-commit has needed a power cycle.
-- **`kv-cache-dtype: fp8`** (commented out in v3): upstream PR #54846 ported to 0.29 as image patch 12 (fp8_e4m3 on the QSA
-  path), 1.66× the pooled tokens on the same pin (2.85M). Measured on this stack against bf16 in 5+5 runs: same steps/s,
-  acceptance 4.23 → 3.92, i.e. ~7 % fewer tokens per second. Uncomment it when many long seats matter more than
-  single-stream speed. The GDN state is a separate thing and stays as shipped.
-- **`compilation-config`** (new in v3): 0.29's model runner rounds every FULL-graph capture size up to a multiple of K+1 and
-  drops the ones past the largest listed, so the list must reach `max-num-seqs × 5`. Shorten it only together with
+- **`kv-cache-memory`** (bytes, per box): 41G default with half the table on each box (~51G of weights per box) =
+  2,450,356 pooled tokens. Leaves ~6G of host headroom on the head box after graph capture — check `free -g` on both
+  boxes after the first boot and back off if either shows swap in use. Do **not** take vLLM's "fully utilize"
+  suggestion: unified memory over-commit has needed a power cycle.
+- **`MBX_PLE_REPLICATE: "0"`** (env): half the n-gram table per box, exchanged per gather — on vLLM 0.30 this measured the
+  same speed as the full table per box at 1, 16 and 32 streams, and it is what pays for the 41G pin. `"1"` puts the full
+  table on each box (14G more per box); then drop `kv-cache-memory` back to 28G.
+- **`compilation-config`**: the model runner rounds every FULL-graph capture size up to a multiple of K+1 and drops the
+  ones past the largest listed, so the list must reach `max-num-seqs × 6` = 384. Shorten it only together with
   `max-num-seqs`; a list that stops short leaves the upper rungs decoding without CUDA graphs.
-- **`MBX_PLE_REPLICATE: "1"`** (env): the full table on each box, no per-step exchange — the layout the numbers were
-  measured on. Unset it for half the table per box: 14G freed per box, so the pin can go to 40G (~80 seats) at
-  engine steps within 1 % — measure before you publish numbers from it.
-- **`gpu-memory-utilization`** 0.70: with the pin set it does not size the KV pool (verified: 65G of weights plus the
-  pin boot at 0.70).
-- **`max-num-seqs`**: 32 — ~89k tokens of pool per seat, 17 tok/s per stream. Each running request also pins ~1.9 % of
-  the pool the moment it is admitted, regardless of length: the GDN recurrent state, 36 layers × (2 + K) blocks of one
-  state each, held for rollback of rejected draft tokens. fp8 KV halves the attention bytes, not this, so ~52 short
-  requests is the hard ceiling of the 28G pin; 48 seats ran at 13 tok/s each with ~3k tokens of pool left per seat, which
-  is why the kit stops at 32. Fewer seats = longer holds before preemption; a smaller K = more seats (2 + K).
-- **`speculative-config`** K=4: acceptance ~4.2 on code and prose, ~2.5 on long reasoning, cap 5.0. A bf16 drafter
-  was A/B'd and rejected (acceptance +0.01, −3 % steps, +3.4G) — the drafter's precision is not what bounds acceptance.
+- **`block-size: 1632`**: required by K=5. This model's attention keeps a small ring of recent keys sized to hold the
+  draft tokens (8 slots at K=4, 12 at K=5), and the ring must divide the attention block; vLLM's automatic block (1616)
+  does not divide by 12 and the boot stops with "QSA ring capacity 12 must divide the attention block size 1616". Remove
+  the line if you go back to K=4.
+- **`NCCL_MAX_NCHANNELS: "4"`** (env): see [What changed](#what-changed). More channels only add host copies here; 2 and 8
+  measured the same as 4, 1 was slower at 32 streams.
+- **`engram-config: {"cpu_offload": false}`**: vLLM 0.30 would otherwise keep the n-gram table in pinned host memory;
+  this image serves it from the GPU, the layout every number here was measured on.
+- **`gdn-prefill-backend: triton`**: 0.30 picks FlashInfer for this on the GB10; triton measured +1 % at one stream and
+  the same from 16 up.
+- **`load-format: fastsafetensors`**: the loader every v4 boot was measured with. Remove it for vLLM's default loader.
+- **`gpu-memory-utilization`** 0.70: with the pin set it does not size the KV pool.
+- **`max-num-seqs`**: 64 — ~38k tokens of pool per seat, 13 tok/s per stream, 817 tok/s aggregate. Each running request
+  also pins part of the pool the moment it is admitted, regardless of length: the GDN recurrent state, 36 layers ×
+  (2 + K) blocks, held for rollback of rejected draft tokens (7 blocks at K=5). At 64 streams of this test the pool filled
+  to 99 % after about three minutes; at 48 it peaked at 81 %. Set 48 if your load is many long answers at once; a smaller
+  K = more seats (2 + K).
+- **fp8 KV** is not in the v4 image (the patch has not been re-ported to 0.30 — upstream PR #54846 is still open);
+  `git checkout v3` for it.
+- **`speculative-config`** K=5, `draft_sample_method: probabilistic`, `rejection_sample_method: block`: acceptance ~5.1
+  on code, ~3.9 over a whole thinking-on request, cap 6.0. Measured one change at a time against K=5 with the defaults:
+  the sampled draft +7 % single-stream (thinking off), +1.5 % thinking on, +9 % at 32 streams; block verification neutral
+  alone and on top. K=4 (`{"method":"mtp","num_speculative_tokens":4}`, capture list to 320, no `block-size`) is the
+  previous setting. A bf16 drafter was A/B'd and rejected (acceptance +0.01, −3 % steps, +3.4G).
 - **`max-num-batched-tokens`**: also the image-input encoder budget — 8192 fits realistic multi-image requests.
 - **`host: 127.0.0.1`**: the cluster runs on host networking, so the API would otherwise be on every interface.
   Set `0.0.0.0` to expose it on the LAN.
@@ -226,30 +290,33 @@ this for you (it needs root); it takes effect immediately, no restart.
 
 ## What's in the image
 
-`myllmbox/qwen38-flash-next-cluster-vllm:v5` — upstream `vllm/vllm-openai:v0.29.0` (the model is upstream in 0.29) plus
-**six readable patches**, each an anchored edit that refuses to apply twice and fails the build if its anchor moved:
+`myllmbox/qwen38-flash-next-cluster-vllm:v6` — upstream `vllm/vllm-openai:v0.30.0` plus **readable patches**, each an
+anchored or sha256-checked edit that refuses to apply twice and fails the build if its target moved:
 
-1. **the n-gram table as a GPU parameter** (`01-ple-nvfp4-v029.py`): when the checkpoint declares its table as NVFP4
-   (hibrid47/48 do, in `config.json`), the table loads as an ordinary resident parameter — half the rows per box, or all
-   of them with `MBX_PLE_REPLICATE=1` — and is gathered and dequantized inside the model's forward pass, inside the CUDA graphs.
-2. **the 4-bit output head** (`11-lm-head-quant-config.py`): two lines — 0.29 builds the model's and the drafter's output
-   head without the checkpoint's quantization config, so stock 0.29 fails on hibrid48 with a shape mismatch. This is the
-   one patch a stock vLLM needs to load these checkpoints; hibrid47 (bf16 head) does not need it.
-3. **fp8 KV on the QSA path** (`12-qsa-fp8-kv-v029.py`): upstream PR #54846 as whole-file overlays of the three files it
-   touches; the build asserts the sha256 of the 0.29 originals and of the overlays. Inert until `kv-cache-dtype: fp8`.
-4. QSA pre-indexer rope clamp (`03`), 5. QSA fused draft (`05`), 6. b12x MoE pre-warm clamp (`09`): three small
-   robustness fixes for the SM121 path, described in the patch files.
+1. **the n-gram table as a GPU parameter** (`18-ple-nvfp4-v030.py`): when the checkpoint declares its table as NVFP4
+   (hibrid47/48 do, in `config.json`), the table loads through 0.30's embedding plugin as a resident parameter — half the
+   rows per box, or all of them with `MBX_PLE_REPLICATE=1` — gathered and dequantized inside the forward pass, inside the
+   CUDA graphs. Stock 0.30 refuses the checkpoint without it.
+2. **the 4-bit output head** (`11-lm-head-quant-config.py`): 0.30 still builds the model's and the drafter's output head
+   without the checkpoint's quantization config, so stock 0.30 fails on hibrid48 with a shape mismatch.
+3. **fused multi-step draft metadata** (`05-qsa-fused-draft-v2.py`): lets speculative decoding reuse one attention-metadata
+   build across its draft steps on this model's QSA attention — the code proposed upstream as
+   [vllm-project/vllm#58449](https://github.com/vllm-project/vllm/pull/58449), shipped as a sha256-checked overlay.
+   +1–3 % engine steps at 1–12 streams, acceptance and GSM8K unchanged.
+4. **loader page-cache drop** (`13`), QSA pre-indexer rope clamp (`03`), and two inert knobs (`16`, `17`), described in the
+   patch files.
 
 The Dockerfile, the patch scripts and the build ledger live in the myllmbox repo under
-[`recipes/qwen38-flash-next-fast/`](https://github.com/bilikaz/myllmbox-runner/tree/main/recipes/qwen38-flash-next-fast)
-— rebuild and diff it yourself. Digest: `sha256:49b57ee9920b7132cd0b4d3e351c5ae96829c4094594981b8d9c711a56b65360`
-(v4, vendor pin + hibrid47 + fp8 KV: `sha256:91423fc292d527935b2f0363cc614305b1c1a00dc56981953a723abe1b50ed2e`).
+[`recipes/qwen38-flash-next-cluster/`](https://github.com/bilikaz/myllmbox-runner/tree/main/recipes/qwen38-flash-next-cluster)
+— rebuild and diff it yourself. Digest: `sha256:DIGEST-PENDING-PUSH`
+(v5, vLLM 0.29 + hibrid48, the v3 kit: `sha256:49b57ee9920b7132cd0b4d3e351c5ae96829c4094594981b8d9c711a56b65360`;
+v4, vendor pin + hibrid47 + fp8 KV: `sha256:91423fc292d527935b2f0363cc614305b1c1a00dc56981953a723abe1b50ed2e`).
 
 ## The full box
 
 This kit serves one model across two boxes, plain. The same model runs under
 [myllmbox](https://github.com/bilikaz/myllmbox-runner) with a public HTTPS tunnel, dashboard, keepalive and
-multi-model management — same image, same weights, one `./run.sh qwen38-flash-next-fast`.
+multi-model management — same image, same weights, one `./run.sh qwen38-flash-next-cluster`.
 
 ## License
 

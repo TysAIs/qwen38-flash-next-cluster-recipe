@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Qwen3.8-Flash-Next (hibrid48: NVFP4 table on the GPU + NVFP4 output head, vLLM 0.29) on TWO DGX Sparks: TP=2 over the ConnectX link (RDMA).
+# Qwen3.8-Flash-Next (hibrid48: NVFP4 table on the GPU + NVFP4 output head, vLLM 0.30) on TWO DGX Sparks: TP=2 over the ConnectX link (RDMA).
 # First run: no cluster.env → ./setup.sh (finds the second box, the interconnect, opens the firewall). Then:
 # pull the image on both boxes, download the weights (once) and sync them to the worker, start the worker
 # (--headless) and the head, wait healthy. Everything model-side is recipe.yaml; the boxes are cluster.env.
@@ -73,8 +73,8 @@ ENVS=(); while IFS=$'\t' read -r k v; do [ -n "$k" ] && ENVS+=(-e "$k=$v"); done
 FLAGS=(); while IFS=$'\t' read -r k v; do
   case "$v" in true) FLAGS+=("--$k");; false|null|"") ;; *) FLAGS+=("--$k" "$v");; esac
 done < <(rsection vllm)
-compose() {  # compose <rank> <iface> <ic-ip> <hca> <has-rdma yes|no>  → prints the docker run command (quoted)
-  local rank=$1 iface=$2 ic=$3 hca=$4 rdma=$5 a=()
+compose() {  # compose <rank> <iface> <ic-ip> <hca> <has-rdma yes|no> <gid-index|"">  → prints the docker run command (quoted)
+  local rank=$1 iface=$2 ic=$3 hca=$4 rdma=$5 gid=$6 a=()
   a=(docker run -d --name "$NAME" --gpus all --ipc=host --network host --cap-add SYS_PTRACE)
   [ "$rdma" = yes ] && a+=(--device /dev/infiniband --cap-add IPC_LOCK --ulimit memlock=-1:-1)
   [ -n "$CPUSET" ] && a+=(--cpuset-cpus "$CPUSET")
@@ -83,7 +83,9 @@ compose() {  # compose <rank> <iface> <ic-ip> <hca> <has-rdma yes|no>  → print
       -e FLASHINFER_WORKSPACE_BASE=/cache/flashinfer-workspace -e VLLM_CACHE_ROOT=/cache/vllm-cache
       -e "NCCL_SOCKET_IFNAME=$iface" -e "GLOO_SOCKET_IFNAME=$iface" -e "VLLM_HOST_IP=$ic" -e NCCL_IB_DISABLE=0)
   [ -n "$hca" ] && a+=(-e "NCCL_IB_HCA=$hca")
-  a+=("${ENVS[@]}" --entrypoint vllm "$IMAGE" serve "/models/$LOCAL_NAME" --host "$HOST" --port "$PORT"
+  a+=("${ENVS[@]}")
+  [ -n "$gid" ] && a+=(-e "NCCL_IB_GID_INDEX=$gid")    # probed, AFTER recipe.yaml's env → docker keeps the last -e
+  a+=(--entrypoint vllm "$IMAGE" serve "/models/$LOCAL_NAME" --host "$HOST" --port "$PORT"
       --nnodes 2 --node-rank "$rank" --master-addr "$HEAD_IC" --master-port "$MPORT" --tensor-parallel-size 2)
   [ "$rank" != 0 ] && a+=(--headless)
   a+=("${FLAGS[@]}")
@@ -92,6 +94,16 @@ compose() {  # compose <rank> <iface> <ic-ip> <hca> <has-rdma yes|no>  → print
 HEAD_RDMA=$([ -d /dev/infiniband ] && echo yes || echo no)
 WORKER_RDMA=$(ssh_w "[ -d /dev/infiniband ] && echo yes || echo no")
 [ "$HEAD_RDMA$WORKER_RDMA" = yesyes ] || echo "  ⚠ RDMA not available on both boxes (head $HEAD_RDMA, worker $WORKER_RDMA) — running NCCL over TCP"
+# NCCL_IB_GID_INDEX per box from the live GID table (it moves on a link flap / reboot); recipe.yaml's value is the fallback
+PIN_GID="$(rkey env NCCL_IB_GID_INDEX)"; HEAD_GID=""; WORKER_GID=""
+[ "$HEAD_RDMA" = yes ] && [ -n "$HEAD_HCA" ] && HEAD_GID="$(gid_index "$HEAD_HCA" "$HEAD_IFACE")"
+[ "$WORKER_RDMA" = yes ] && [ -n "$WORKER_HCA" ] && WORKER_GID="$(gid_index_w "$WORKER_HCA" "$WORKER_IFACE")"
+for side in head worker; do
+  g=$([ $side = head ] && echo "$HEAD_GID" || echo "$WORKER_GID")
+  if [ -z "$g" ]; then echo "  ⚠ $side: no RoCE v2 IPv4 GID found — using recipe.yaml's NCCL_IB_GID_INDEX=${PIN_GID:-unset}"
+  elif [ -n "$PIN_GID" ] && [ "$g" != "$PIN_GID" ]; then echo "· $side: RoCE v2 GID index is $g (recipe.yaml pins $PIN_GID) — using $g"
+  else echo "· $side: NCCL_IB_GID_INDEX=$g (probed)"; fi
+done
 compaction_check
 
 # 5. launch: clear old containers, then GATE on memory (unified memory needs ~30-60 s after a container dies;
@@ -101,11 +113,11 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 ssh_w "docker rm -f '$NAME' >/dev/null 2>&1 || true"
 wait_mem 100 120 || exit 1
 evict_cache "$MODEL_DIR"
-echo "· starting head (rank 0) — API on $HOST:$PORT once healthy (first boot ~10 min: load + compile warmup)"
-eval "$(compose 0 "$HEAD_IFACE" "$HEAD_IC" "$HEAD_HCA" "$HEAD_RDMA")" >/dev/null
+echo "· starting head (rank 0) — API on $HOST:$PORT once healthy (about 4 min with the weights present)"
+eval "$(compose 0 "$HEAD_IFACE" "$HEAD_IC" "$HEAD_HCA" "$HEAD_RDMA" "$HEAD_GID")" >/dev/null
 sleep 2
 echo "· starting worker ($WORKER_HOST, rank 1, --headless)"
-ssh_w "$(compose 1 "$WORKER_IFACE" "$WORKER_IC" "$WORKER_HCA" "$WORKER_RDMA") >/dev/null"
+ssh_w "$(compose 1 "$WORKER_IFACE" "$WORKER_IC" "$WORKER_HCA" "$WORKER_RDMA" "$WORKER_GID") >/dev/null"
 
 # 6. stream the head's logs until healthy; fail fast if either container dies
 echo "· streaming engine logs until healthy (Ctrl-C detaches; the cluster keeps booting)"

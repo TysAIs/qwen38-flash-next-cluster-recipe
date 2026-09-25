@@ -61,6 +61,18 @@ route_dev() { ip -o route get "$1" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1
 # --- memory gate (UMA: a serve relaunched seconds after a teardown gets a PHANTOM "CUDA out of memory" — the
 # previous container's GPU pages take ~30-60 s to come back; nothing else is wrong). So after removing old
 # containers we WAIT until both boxes report enough available memory, instead of launching into the race.
+# RoCE v2 GID index for NCCL, per box, probed at launch. NCCL_IB_GID_INDEX names the entry of the HCA's GID table that
+# carries the IPv4-mapped RoCE v2 GID (::ffff:a.b.c.d). That index MOVES when a link flaps or a box reboots (seen: 3 -> 4
+# after the other box's power cycle), and a stale pinned value fails NCCL init with "unhandled system error". Picks the
+# RoCE v2 IPv4 entry of <hca>, preferring the one on <iface>, lowest index first. Prints the index, or nothing.
+GID_PROBE='hca=$1; ifc=$2; p=/sys/class/infiniband/$hca/ports/1; best=""
+for i in $(ls "$p/gids" 2>/dev/null | sort -n); do
+  g=$(cat "$p/gids/$i" 2>/dev/null); t=$(cat "$p/gid_attrs/types/$i" 2>/dev/null); n=$(cat "$p/gid_attrs/ndevs/$i" 2>/dev/null)
+  case "$g" in 0000:0000:0000:0000:0000:ffff:*) case "$t" in *v2*)
+    [ "$n" = "$ifc" ] && { echo "$i"; exit 0; }; [ -z "$best" ] && best=$i;; esac;; esac
+done; [ -n "$best" ] && echo "$best"; true'
+gid_index()   { bash -c "$GID_PROBE" _ "${1%%,*}" "${2%%,*}"; }       # gid_index <hca> <iface>   (this box)
+gid_index_w() { ssh_w "bash -c $(printf '%q' "$GID_PROBE") _ $(printf '%q' "${1%%,*}") $(printf '%q' "${2%%,*}")"; }  # (worker)
 mem_avail() { free -g | awk '/^Mem:/{print $7}'; }
 wait_mem() {  # wait_mem <need GiB> <max seconds>
   local need=$1 max=$2 t=0 h w

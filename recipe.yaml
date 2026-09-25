@@ -5,11 +5,11 @@
 # worker) and the per-box NCCL/gloo interface pins are added by run.sh from cluster.env — never put them here.
 
 server:
-  image: myllmbox/qwen38-flash-next-cluster-vllm:v5   # pinned public tag (digest in README) = vLLM 0.29.0 (vllm/vllm-openai)
-                                                      # + six patches: the NVFP4 n-gram table as a resident GPU parameter;
-                                                      # the 4-bit output head (hibrid48) — stock 0.29 cannot load it;
-                                                      # fp8 KV on the QSA path (opt-in); QSA rope clamp + fused draft;
-                                                      # b12x prewarm clamp. v4 (vendor pin, hibrid47) = `git checkout v2.1`
+  image: myllmbox/qwen38-flash-next-cluster-vllm:v6   # pinned public tag (digest in README) = vLLM 0.30.0 (vllm/vllm-openai)
+                                                      # + patches: the NVFP4 n-gram table on 0.30's embedding plugin; the
+                                                      # 4-bit output head (hibrid48) — stock 0.30 cannot load either; the
+                                                      # fused multi-step MTP draft (= vllm-project/vllm#58449); QSA rope
+                                                      # clamp; loader page-cache drop. v3 (vLLM 0.29, image v5) = `git checkout v3`
   cpuset: "5-9,15-19"                           # the GB10's 10 Cortex-X925 3.9GHz cores (0-4,10-14 are
                                                 # 2.8GHz A725) — measured +2-3% at every concurrency
   model: myllmbox/Qwen3.8-Flash-Next-hibrid48   # HF repo — downloaded into ./models on first run (~99G),
@@ -29,10 +29,12 @@ server:
 
 env:
   # The n-gram (PLE) table is an ordinary GPU parameter in hibrid47/48 — no offload worker.
-  MBX_PLE_REPLICATE: "1"                        # the FULL table on each box (28.6G, no per-step exchange) — the
-                                                # layout every number was measured on. Unset = half per box
-                                                # (14G less per box → room for a 40G KV pin; steps within 1 %)
-  # No OMP_NUM_THREADS: vLLM 0.29 sizes its threads itself (many for the load, one for serving); a fixed value hurts one phase.
+  MBX_FUSED_DRAFT: "1"
+  MBX_PLE_REPLICATE: "0"                        # HALF the table per box (14.3G), exchanged per gather. On vLLM 0.30 this
+                                                # measured the SAME speed as the full table per box at 1/16/32 concurrent
+                                                # (it was slower on 0.29) and frees 13.4G per box → the 41G KV pin below.
+                                                # "1" = the full table on each box (then drop kv-cache-memory back to 28G)
+  # No OMP_NUM_THREADS: vLLM sizes its threads itself (many for the load, one for serving); a fixed value hurts one phase.
   PYTHONUNBUFFERED: "1"                         # rank-1 load progress actually shows in docker logs
   TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
   TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC: "180"       # die in 3 min on a stuck collective instead of hanging 30
@@ -48,36 +50,48 @@ env:
   NCCL_IGNORE_CPU_AFFINITY: "1"
   NCCL_CUMEM_ENABLE: "0"
   NCCL_NVLS_ENABLE: "0"
+  NCCL_MAX_NCHANNELS: "4"                       # NCCL builds 64 channels here and splits every large message across all of
+                                                # them; with no GPUDirect RDMA on the GB10 each piece is copied through host
+                                                # memory, so 4 is faster: +10 % tok/s at 32 concurrent, +7 % at 64, same at 1
 
 vllm:
   served-model-name: Qwen/Qwen3.8-Flash-Next
-  moe-backend: marlin                           # fastest MoE kernel for NVFP4 W4A16 on the GB10 in 0.29 (+5 % steps over
+  engram-config: '{"cpu_offload": false}'      # vLLM 0.30 defaults to keeping the n-gram table in pinned host memory; this
+                                                # image serves it from the GPU (the layout every number was measured on)
+  gdn-prefill-backend: triton                   # 0.30's default on the GB10 is FlashInfer; triton measured +1 % at 1 stream,
+                                                # equal from 16 up, and avoids the kernel that crashed a serve on 0.29
+  moe-backend: marlin                           # fastest MoE kernel for NVFP4 W4A16 on the GB10 (+5 % steps over
                                                 # flashinfer_cutlass; the b12x backend crashed on prefix-cached long prompts)
   pipeline-parallel-size: 1                     # TP only (TP=2 is set by run.sh = box count)
   distributed-executor-backend: mp              # no Ray
   gpu-memory-utilization: 0.70                  # with kv-cache-memory pinned this does not size the KV pool (verified:
                                                 # 65G of weights + the pin boot fine at 0.70)
-  kv-cache-memory: "28000000000"                # 28G per box = 1.71M pooled KV tokens in bf16 (6.5× the 262K window; KV is
-                                                # split across the two boxes). Leaves ~5G host headroom per box after
-                                                # graph capture — do not take vLLM's "fully utilize" figure
-  # kv-cache-dtype: fp8                         # 2.85M tokens on the same pin (image patch 12) — but measured −0.3 accepted
-                                                # tokens per step on this lane (4.23 → 3.92, 5+5 runs), i.e. −7 % tok/s.
-                                                # Enable it when you need many long seats more than single-stream speed.
-  compilation-config: '{"cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[1,2,4,5,8,10,15,16,20,25,30,32,40,60,64,80,120,128,160],"compile_ranges_endpoints":[32]}'
-                                                # 0.29's V2 runner rounds each FULL-graph size UP to a multiple of K+1 (=5) and
-                                                # drops sizes past the largest listed → the list must reach seats×5 = 160,
-                                                # or every rung above c=6 decodes eagerly (measured: c=32 without it = eager)
+  kv-cache-memory: "41000000000"                # 41G per box = 2,500,128 pooled KV tokens in bf16 (9.5× the 262K window; KV
+                                                # is split across the two boxes) — paid for by the half table above. Leaves
+                                                # ~6G host headroom on the head box after graph capture; do not take vLLM's
+                                                # "fully utilize" figure. (fp8 KV is not available in this image.)
+  compilation-config: '{"cudagraph_mode":"FULL_AND_PIECEWISE","cudagraph_capture_sizes":[1,2,4,6,8,12,16,18,24,30,32,36,48,60,64,72,96,120,128,144,192,240,256,288,336,384],"compile_ranges_endpoints":[32]}'
+                                                # the engine rounds each full-graph size UP to a multiple of K+1 (=6) and
+                                                # drops sizes past the largest listed → the list must reach seats×6 = 384,
+                                                # or every concurrency above it decodes without graphs
+  block-size: 1632                              # needed for K=5: the attention ring (12 slots) must divide the block size;
+                                                # the automatic 1616 does not, 1632 does (drop this line if you go back to K=4)
+  load-format: fastsafetensors                  # the loader every boot figure below was measured with (weights in ~97 s,
+                                                # the whole boot ~4 min); remove for vLLM's default safetensors loader
   max-model-len: 262144                         # the model's native max
-  max-num-seqs: 32                              # 32 seats × ~53k tokens of pool each (1.71M / 32), 17 tok/s per
-                                                # stream. Each running request also pins ~1.9 % of the pool at
-                                                # admission (the model's GDN recurrent state, 36 layers × (2+K)
-                                                # blocks), so ~52 is the hard ceiling either way
+  max-num-seqs: 64                              # 64 seats × ~38k tokens of pool each (2.45M / 64). With K=5 each running request
+                                                # pins more pool at admission (the model's GDN recurrent state + the longer draft
+                                                # ring): 64 long answers fill the pool after ~3 min and requests start to queue.
+                                                # 48 keeps headroom (~75 % at 48 pasture-length streams)
   max-num-batched-tokens: 8192                  # also the image-input encoder budget — keep for image requests
                                                 # (4096 made 0.29 add a compile range that crashed the MoE profile run)
   enable-prefix-caching: true
   enable-auto-tool-choice: true
   tool-call-parser: qwen3_xml
   reasoning-parser: qwen3
-  speculative-config: '{"method":"mtp","num_speculative_tokens":4}'   # K=4: acceptance 4.2–4.4 on code (cap 5.0), ~3 on
-                                                # reasoning prose; dense code reaches 4.9 → 107 tok/s peak at 22 steps/s
+  speculative-config: '{"method":"mtp","num_speculative_tokens":5,"rejection_sample_method":"block","draft_sample_method":"probabilistic"}'
+                                                # K=5 drafts, sampled from the drafter (probabilistic) and verified as a block:
+                                                # 5.1 of 6 accepted on code, ~3.9 on thinking-on requests. Measured vs K=4:
+                                                # 1 stream 92 → 107 tok/s (thinking on 76 → 81, peak 108 → 121), 32 streams
+                                                # 595 → 644, 64 streams 741 → 808 (861 peak)
   async-scheduling: true                        # +9-12% at c=4-5, neutral at 8+
