@@ -1,7 +1,7 @@
 # Known issues and honest caveats
 
-Everything here was observed on the live fleet (two DGX Sparks, `head0` head + `work1`
-worker) or measured directly. If it is not on this page, it has not bitten us.
+Everything here was observed on the live fleet (two DGX Sparks: the head + the worker)
+or measured directly. If it is not on this page, it has not bitten us.
 
 ## 1. The worker runs rank 1 `--headless` — it has no API and no health endpoint
 
