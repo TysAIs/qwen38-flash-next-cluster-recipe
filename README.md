@@ -290,6 +290,11 @@ Everything lives in [`recipe.yaml`](recipe.yaml) with an inline comment; the one
 - **`host: 0.0.0.0` + port 8888** — this fleet exposes the API on the LAN; flip `host` to
   `127.0.0.1` for a private box.
 - **fp8 KV** is not in the v6 image (upstream PR #54846 not yet re-ported); `git checkout v3` for it.
+- **`server.patches`** — space-separated list of `patches/<name>.patch` applied at launch; default
+  empty = the stock image. `run.sh` copies the files each patch touches out of the image, dry-runs then
+  applies them in order, and mounts the result read-only on both boxes, so a patch needs no rebuild.
+  Ships with `hermes-chat` (OpenAI-compat: top-level `{"reasoning": {...}}` and greedy default
+  temperature) — off by default; see `patches/README.md`.
 - Thinking is ON by default (model native); per-request `"chat_template_kwargs":
   {"enable_thinking": false}` for max speed on structured output.
 
