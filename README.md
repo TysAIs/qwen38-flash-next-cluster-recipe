@@ -1,5 +1,12 @@
 # Qwen3.8-Flash-Next on two DGX Sparks — the fleet recipe
 
+**Two standards here, plainly:** (1) **the uncensored lane** — we serve
+`myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored`; no censored variant is offered as the
+standard. (2) **the CPU spin-fix image, built from this repo** — `./start.sh` builds
+`v6-spinfix` itself from `docker/spinfix/` over the public `v6` base when the tag is missing, so a
+fresh clone needs **zero extra steps** and no registry hosts our fork (the one-line sed lives
+here; background in [KNOWN-ISSUES.md #3](KNOWN-ISSUES.md)).
+
 **This repository is the live recipe**: exactly what our two-Spark fleet serves today, verified
 against the running boxes on 2026-09-28 and pinned in [`VERSIONS.lock`](VERSIONS.lock). Clone it,
 set three variables, run one script, verify — and you have the same endpoint we do.
@@ -131,9 +138,11 @@ engine steps), QSA pre-indexer rope clamp (`03`), loader page-cache drop (`13`),
 
 This fleet pins **`v6-spinfix`**: that image + a one-line sed (`busy_loop_s 1 → 0.002` in vLLM's
 shm broadcast) that stops an idle CPU core spin-waiting and heating the SoC — zero throughput
-cost, build it from [docker/spinfix/](docker/spinfix/Dockerfile); background in
-[TysAIs/gb10-vllm-ops](https://github.com/TysAIs/gb10-vllm-ops). The `-spinfix` tag is **not on
-Docker Hub**: KNOWN-ISSUES #3.
+cost. It is deliberately **not on any registry**: `./start.sh` builds it from
+[docker/spinfix/](docker/spinfix/Dockerfile) over the public `v6` base on first run and ships it
+to the worker (`docker save | ssh docker load`); background in
+[TysAIs/gb10-vllm-ops](https://github.com/TysAIs/gb10-vllm-ops) and
+[KNOWN-ISSUES.md #3](KNOWN-ISSUES.md).
 
 ## RDMA or it is lying to you
 

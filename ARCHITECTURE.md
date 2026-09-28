@@ -5,9 +5,9 @@ tensor-parallel engine over their ConnectX RoCE link. This is the layout as veri
 fleet on 2026-09-28 (`docker inspect`, `sysctl`, `sha256sum` — the numbers in `VERSIONS.lock`).
 
 ```
-                     LAN 10.0.0.x
+                     LAN (your subnet, e.g. 203.0.113.0/24)
                           │
-   client ──HTTP──►   the-head(head, 203.0.113.4)           the-worker(worker, 203.0.113.23)
+   client ──HTTP──►  head (203.0.113.4)                 worker (203.0.113.23)
                      rank 0 · vLLM 0.30.0               rank 1 · vLLM 0.30.0 --headless
                      API 0.0.0.0:8888                   (no API, no health port)
                      weights + caches at the SAME path   weights + caches at the SAME path

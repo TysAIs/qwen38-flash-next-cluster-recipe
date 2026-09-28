@@ -8,7 +8,7 @@ base_tag: myllmbox/qwen38-flash-next-cluster-vllm:v6
 base_registry_digest: sha256:861ac752164e0d723c5eff3f876586c6678c26ad4a516112c48745f6a101ff4d   # confirmed against Docker Hub 2026-09-28
 local_image_id: sha256:684bb374cd2ea1925f971addde05c5dd33a5ddaac5f01b2663585b7c73618e91          # IDENTICAL on head and worker
 vllm_version: 0.30.0
-spinfix: local-only              # NOT published to Docker Hub (manifest 404 as of 2026-09-28). Rebuild: see docker/spinfix/README.md
+spinfix: built-from-repo          # NOT on any registry BY DESIGN — run.sh self-builds it from docker/spinfix/ over the public base on first run (see KNOWN-ISSUES #3)
 rebuild: "docker build -t myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix docker/spinfix/"   # FROM v6, one-line sed
 
 [weights]
@@ -37,7 +37,7 @@ kv_cache_memory_bytes: 41000000000 # per box
 restart_policy: none               # containers do NOT survive a host reboot — ./start.sh (or ./run.sh) after every reboot
 
 [deviations]                       # everything the live fleet does differently from a stock ./run.sh of this repo
-- image: v6-spinfix (local build) instead of registry v6 — busy_loop_s 1 -> 0.002 in vllm shm_broadcast; SoC temp fix, zero throughput cost (see TysAIs/gb10-vllm-ops)
+- image: v6-spinfix (self-built by run.sh from docker/spinfix/) instead of registry v6 — busy_loop_s 1 -> 0.002 in vllm shm_broadcast; SoC temp fix, zero throughput cost (see TysAIs/gb10-vllm-ops)
 - port: 8888 (upstream example default is 8000) — set in recipe.yaml, .env PORT default here matches
 - host: 0.0.0.0 — API exposed on the LAN, not loopback
 - served-model-name: qwen3.8-flash-next (upstream example: Qwen/Qwen3.8-Flash-Next-Uncensored)

@@ -36,15 +36,18 @@ If you benchmark a fleet endpoint, benchmark it **as a fleet endpoint** (concurr
 An idle-engine number from a shared box is a measurement error, not a spec. The 36/36 requests
 OK across the baseline runs is the other half of the card: the endpoint is healthy, just shared.
 
-## 3. `v6-spinfix` is a LOCAL image — a fresh `docker pull` gets plain v6 and regresses thermally
+## 3. `v6-spinfix` is built from this repo, not pulled — by design, no registry dependency
 
 `myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix` (v6 + the GB10 spin-wait fix, see
-`docker/spinfix/`) is not published to Docker Hub as of 2026-09-28 (registry manifest: 404).
-A clean machine following `recipe.yaml` will fail `docker pull` and fall back to plain `v6` —
-everything runs, at the same speed, but a CPU core busy-spins while idle and SoC temps climb
-(the fix costs zero throughput but is not free to skip on a hot box). Fix: build it
-(`docker build -t myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix docker/spinfix/`) or point
-`recipe.yaml` at `:v6` (one comment flip).
+`docker/spinfix/`) is deliberately **not published to any registry**: it is a one-line sed over the
+public `v6` base, and a 22 GB single-sed image does not deserve registry custody. `./start.sh`
+self-heals — if the tag is missing it runs
+`docker build -t myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix docker/spinfix/` on the head
+(only network dependency: the public `v6` base pull from Docker Hub, the upstream author's account)
+and ships the image to the worker with `docker save | ssh docker load`. A fresh clone therefore
+needs **zero manual steps** and never silently regresses to plain `v6`.
+If you skip the fix anyway (point `recipe.yaml` at `:v6`), everything runs at the same speed, but a
+CPU core busy-spins while idle and SoC temps climb — not free to skip on a hot box.
 
 ## 4. `vm.compaction_proactiveness` is still 20 on the live fleet
 

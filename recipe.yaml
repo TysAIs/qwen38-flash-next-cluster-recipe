@@ -6,9 +6,9 @@
 
 server:
   image: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix   # THIS FLEET's pin. = upstream v6 + one-line GB10 spin-wait
-                                                      # fix (busy_loop_s 1 -> 0.002; SoC temps, no throughput cost). NOT on
-                                                      # Docker Hub — rebuild it from docker/spinfix/ (2-minute build) or
-                                                      # switch to the plain tag below.
+                                                      # fix (busy_loop_s 1 -> 0.002; SoC temps, no throughput cost). Intentionally
+                                                      # NOT on any registry: run.sh BUILDS it from docker/spinfix/ over the public
+                                                      # base below, on first run — zero manual steps (see KNOWN-ISSUES #3).
   # image: myllmbox/qwen38-flash-next-cluster-vllm:v6 # upstream pin, public (digest in README) = vLLM 0.30.0 (vllm/vllm-openai)
                                                       # + patches: the NVFP4 n-gram table on 0.30's embedding plugin; the
                                                       # 4-bit output head (hibrid48) — stock 0.30 cannot load either; the

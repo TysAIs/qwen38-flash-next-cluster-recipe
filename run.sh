@@ -31,9 +31,11 @@ MODELS_ABS="$(cd "$MODELS_DIR" && pwd)"; CACHE_ABS="$(cd "$CACHE_DIR" && pwd)"
 LOCAL_NAME="$(basename "$HF_REPO")"; MODEL_DIR="$MODELS_ABS/$LOCAL_NAME"
 ssh_w "mkdir -p '$MODELS_ABS' '$CACHE_ABS'"
 
-# 1. image on BOTH boxes (a public tag — each box pulls; no-op when present)
-echo "· image $IMAGE — head"; docker pull -q "$IMAGE" >/dev/null || docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "✗ cannot pull $IMAGE"; exit 1; }
-echo "· image $IMAGE — worker"; ssh_w "docker pull -q '$IMAGE' >/dev/null || docker image inspect '$IMAGE' >/dev/null 2>&1" || { echo "✗ worker cannot pull $IMAGE"; exit 1; }
+# 1. image on BOTH boxes — self-healing (no registry dependency for -spinfix tags).
+#    Public tag: each box pulls (no-op when present). Local tag (not on the registry, e.g.
+#    v6-spinfix): built HERE from docker/spinfix/ over the public base, then shipped to the
+#    worker with docker save|ssh docker load — the repo is the deliverable, zero manual steps.
+ensure_image "$IMAGE"
 
 # 2. weights: ~99G, resumable — download on the head, then sync to the worker at the SAME path
 # "complete" = the index is there AND no partial blob is left behind by an interrupted download (huggingface_hub keeps

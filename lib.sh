@@ -147,6 +147,40 @@ compaction_check() {
   fi
 }
 
+# --- image self-heal ---------------------------------------------------------------------------------
+# The spin-fix image (docker/spinfix/) is a ONE-LINE sed over the public base tag — deliberately NOT
+# on any registry: the repo is the deliverable. ensure_image <image>:
+#   · present on a box                          → no-op
+#   · tag pulls from a registry (e.g. plain v6) → each box pulls
+#   · tag not on a registry (e.g. v6-spinfix)   → build on the head from docker/spinfix/ (needs the
+#     public base; the build is ~2 min over a 22 GB pull of the base), then ship to the worker via
+#     `docker save | ssh docker load` (~22 GB over the LAN, a one-time ~3 min).
+ensure_image() {
+  local img="$1" base
+  if docker image inspect "$img" >/dev/null 2>&1; then
+    echo "· image $img — head: present"
+  elif docker pull -q "$img" >/dev/null 2>&1; then
+    echo "· image $img — head: pulled"
+  elif [ -f docker/spinfix/Dockerfile ]; then
+    base=$(awk '/^FROM /{print $2; exit}' docker/spinfix/Dockerfile)
+    docker image inspect "$base" >/dev/null 2>&1 || docker pull -q "$base" || { echo "✗ cannot pull base $base"; return 1; }
+    echo "· image $img not on any registry — building from docker/spinfix/ over $base (one-time, ~2 min)"
+    docker build -q -t "$img" docker/spinfix/ >/dev/null || { echo "✗ spinfix build failed"; return 1; }
+  else
+    echo "✗ image $img: not local, not pullable, and no docker/spinfix/Dockerfile to build it from"; return 1
+  fi
+  if ssh_w "docker image inspect '$img'" >/dev/null 2>&1; then
+    echo "· image $img — worker: present"
+  elif ssh_w "docker pull -q '$img'" >/dev/null 2>&1; then
+    echo "· image $img — worker: pulled"
+  else
+    echo "· image $img — worker: shipping from head (docker save | ssh docker load, one-time, ~22 GB)"
+    docker save "$img" | ssh -o BatchMode=yes "$WORKER" "docker load -q" >/dev/null || return 1
+    ssh_w "docker image inspect '$img'" >/dev/null 2>&1 || return 1
+    echo "· image $img — worker: loaded"
+  fi
+}
+
 # --- Hugging Face access ------------------------------------------------------------------------------
 # Anonymous downloads are rate-limited, and GATED repos (license-agreement models — the uncensored variants, most
 # fine-tunes of gated bases) refuse anonymous access outright: the download stalls, then dies with 401 after a while.

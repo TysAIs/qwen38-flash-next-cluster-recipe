@@ -8,7 +8,7 @@
 # ./run.sh calls this automatically when cluster.env is missing. Idempotent — rerun after re-cabling.
 #
 #   ./setup.sh                 # interactive
-#   ./setup.sh user@ 203.0.113.2  # worker given on the command line
+#   ./setup.sh user@203.0.113.2   # worker given on the command line
 set -euo pipefail
 cd "$(dirname "$0")"
 # shellcheck source=lib.sh
