@@ -1,0 +1,46 @@
+version: 1                       # schema of this lockfile (key: value lines, grouped by section)
+locked_at: 2026-09-28            # captured from the live fleet by direct inspection (docker inspect / sha256sum / sysctl)
+served_model: qwen3.8-flash-next # served-model-name; backing checkpoint below
+
+[image]
+tag: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix
+base_tag: myllmbox/qwen38-flash-next-cluster-vllm:v6
+base_registry_digest: sha256:861ac752164e0d723c5eff3f876586c6678c26ad4a516112c48745f6a101ff4d   # confirmed against Docker Hub 2026-09-28
+local_image_id: sha256:684bb374cd2ea1925f971addde05c5dd33a5ddaac5f01b2663585b7c73618e91          # IDENTICAL on head and worker
+vllm_version: 0.30.0
+spinfix: local-only              # NOT published to Docker Hub (manifest 404 as of 2026-09-28). Rebuild: see docker/spinfix/README.md
+rebuild: "docker build -t myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix docker/spinfix/"   # FROM v6, one-line sed
+
+[weights]
+repo: myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored      # gated (auto) on Hugging Face; base_model: Qwen/Qwen3.8-Flash-Next
+revision: 572e216abdc523306fa9e1ded741b26b59d1169e         # HF commit the install resolved to; both boxes carry this revision
+path: <repo>/models/Qwen3.8-Flash-Next-hibrid48-uncensored # real directory (never a symlink); identical absolute path on both boxes
+size: 99G
+safetensors_files: 25
+sha256_config_json: 4b091f3a6ec0f5f4247823c6668d1b35aed9a24911725a9b7e052c14ba4a1544
+sha256_index_json: 50fd1fc371e055950c59b1783f551c9376daae620a2b2a3ffb6b56f066f7b81d
+sha256_lmhead_nvfp4: db8f03e52450d2f9bb9b8daca9844a2b7bd343845e43ebe21a68055b841bd94d
+worker_parity: verified            # the three sha256 above are identical on worker at the same path, no .incomplete files
+
+[hosts]                            # both Sparks
+kernel: 6.17.0-1031-nvidia
+nvidia_driver: 580.173.02
+os_updates: disabled               # APT::Periodic::Unattended-Upgrade "0"; 6 kernel/driver packages apt-mark hold
+cpu_pinning: "--cpuset-cpus 5-9,15-19"   # the 10 Cortex-X925 3.9GHz cores (0-4,10-14 are 2.8GHz A725)
+fabric: 203.0.113.2 (head) <-> 203.0.113.1 (worker), iface enp1s0f1np1, HCA rocep1s0f1, RoCE v2 GID index 3 (probed at launch)
+
+[serve]
+ports: { api: 8888, host_binding: 0.0.0.0, rendezvous: 25000 }
+tensor_parallel: 2                 # head = rank 0 (API), worker = rank 1 (--headless)
+seats: 12                          # max-num-seqs (fleet setting; upstream default in recipe.yaml is 64)
+kv_cache_memory_bytes: 41000000000 # per box
+restart_policy: none               # containers do NOT survive a host reboot — ./start.sh (or ./run.sh) after every reboot
+
+[deviations]                       # everything the live fleet does differently from a stock ./run.sh of this repo
+- image: v6-spinfix (local build) instead of registry v6 — busy_loop_s 1 -> 0.002 in vllm shm_broadcast; SoC temp fix, zero throughput cost (see TysAIs/gb10-vllm-ops)
+- port: 8888 (upstream example default is 8000) — set in recipe.yaml, .env PORT default here matches
+- host: 0.0.0.0 — API exposed on the LAN, not loopback
+- served-model-name: qwen3.8-flash-next (upstream example: Qwen/Qwen3.8-Flash-Next-Uncensored)
+- max-num-seqs: 12 — fleet is latency-first for chat agents; 64 is the throughput-first upstream default
+- cluster.env written by hand (fabric IPs match the vendor reference layout); setup.sh would produce the same file interactively
+- vm.compaction_proactiveness is still the 20 default on both boxes — ./tune-host.sh was NOT applied; expect ~10% periodic stalls (see KNOWN-ISSUES.md)

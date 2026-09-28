@@ -8,17 +8,22 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # shellcheck source=lib.sh
 source lib.sh
+# Fleet entry: .env (cp .env.example .env) may set HF_TOKEN, WORKER=user@host, PORT. Any exported value
+# wins over recipe.yaml; WORKER seeds the first-run setup when cluster.env is still missing.
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
 command -v docker >/dev/null || { echo "docker is required"; exit 1; }
 
 # 0. boxes — none configured yet? set the cluster up first.
 if ! have_cluster; then
   echo "· no cluster.env — running ./setup.sh first"
-  ./setup.sh
+  ./setup.sh ${WORKER:+"$WORKER"}
 fi
 load_cluster
 ssh_w true 2>/dev/null || { echo "✗ cannot reach the worker $WORKER — rerun ./setup.sh"; exit 1; }
 
-IMAGE="$(rkey server image)";   PORT="$(rkey server port)";   HOST="$(rkey server host)";  HOST="${HOST:-127.0.0.1}"
+IMAGE="$(rkey server image)";   HOST="$(rkey server host)";  HOST="${HOST:-127.0.0.1}"
+# PORT from .env/the environment wins; recipe.yaml is the fallback (recipe.yaml stays the fleet pin: 8888).
+PORT="${PORT:-$(rkey server port)}"
 HF_REPO="$(rkey server model)"; MPORT="$(rkey server master_port)"; MPORT="${MPORT:-25000}"
 MODELS_DIR="$(rkey server models_dir)"; CACHE_DIR="$(rkey server cache_dir)"; CPUSET="$(rkey server cpuset)"
 mkdir -p "$MODELS_DIR" "$CACHE_DIR"

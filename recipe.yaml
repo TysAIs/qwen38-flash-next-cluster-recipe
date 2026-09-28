@@ -5,7 +5,11 @@
 # worker) and the per-box NCCL/gloo interface pins are added by run.sh from cluster.env — never put them here.
 
 server:
-  image: myllmbox/qwen38-flash-next-cluster-vllm:v6   # pinned public tag (digest in README) = vLLM 0.30.0 (vllm/vllm-openai)
+  image: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix   # THIS FLEET's pin. = upstream v6 + one-line GB10 spin-wait
+                                                      # fix (busy_loop_s 1 -> 0.002; SoC temps, no throughput cost). NOT on
+                                                      # Docker Hub — rebuild it from docker/spinfix/ (2-minute build) or
+                                                      # switch to the plain tag below.
+  # image: myllmbox/qwen38-flash-next-cluster-vllm:v6 # upstream pin, public (digest in README) = vLLM 0.30.0 (vllm/vllm-openai)
                                                       # + patches: the NVFP4 n-gram table on 0.30's embedding plugin; the
                                                       # 4-bit output head (hibrid48) — stock 0.30 cannot load either; the
                                                       # fused multi-step MTP draft (= vllm-project/vllm#58449); QSA rope
@@ -20,9 +24,9 @@ server:
                                                 # own moderation. GATED on Hugging Face: accept its agreement, then hf auth login
                                                 # or export HF_TOKEN (run.sh checks). Nothing else in this file changes. Set
                                                 # served-model-name to Qwen/Qwen3.8-Flash-Next-Uncensored if you run both.
-  port: 8000                                    # OpenAI API on the head box
-  host: 127.0.0.1                               # the cluster runs on host networking — 127.0.0.1 keeps the API
-                                                # local; set 0.0.0.0 to expose it on the LAN
+  port: 8888                                    # OpenAI API on the head box (./start.sh may override with PORT from .env)
+  host: 0.0.0.0                                 # the cluster runs on host networking. The fleet serves this on the LAN
+                                                # (a shared fleet endpoint); set 127.0.0.1 to keep it local to the head box
   master_port: 25000                            # torch.distributed rendezvous, on the interconnect
   models_dir: ./models
   cache_dir: ./cache                            # compile/autotune caches (per box); deletable, first boot rebuilds
@@ -55,7 +59,8 @@ env:
                                                 # memory, so 4 is faster: +10 % tok/s at 32 concurrent, +7 % at 64, same at 1
 
 vllm:
-  served-model-name: Qwen/Qwen3.8-Flash-Next-Uncensored
+  served-model-name: qwen3.8-flash-next         # the name every fleet client calls. Upstream examples use
+                                                # Qwen/Qwen3.8-Flash-Next-Uncensored — any string works.
   engram-config: '{"cpu_offload": false}'      # vLLM 0.30 defaults to keeping the n-gram table in pinned host memory; this
                                                 # image serves it from the GPU (the layout every number was measured on)
   gdn-prefill-backend: flashinfer               # +5 % prefill over triton from 8k to 256k tokens, same decode speed
@@ -78,7 +83,8 @@ vllm:
   load-format: fastsafetensors                  # the loader every boot figure below was measured with (weights in ~97 s,
                                                 # the whole boot ~4 min); remove for vLLM's default safetensors loader
   max-model-len: 262144                         # the model's native max
-  max-num-seqs: 64                              # 64 seats × ~38k tokens of pool each (2.45M / 64). With K=5 each running request
+  max-num-seqs: 12                              # THIS FLEET: 12 seats — latency-first for a shared chat-agent endpoint
+                                                # (upstream default 64: 64 seats × ~38k tokens of pool each (2.45M / 64)). With K=5 each running request
                                                 # pins more pool at admission (the model's GDN recurrent state + the longer draft
                                                 # ring): 64 long answers fill the pool after ~3 min and requests start to queue.
                                                 # 48 keeps headroom (~75 % at 48 pasture-length streams)

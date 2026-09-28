@@ -2,3 +2,4 @@
 cluster.env
 cache/
 models/
+.env
