@@ -18,8 +18,8 @@ ck "chat completion returns content" \
       \"model\": \"qwen3.8-flash-next\",
       \"messages\": [{\"role\": \"user\", \"content\": \"Reply with exactly: pong\"}],
       \"max_tokens\": 2048, \"temperature\": 0}" | grep -q "choices"'
-ck "engine reports a model name (generated, not cached)" \
-   'curl -sf -m 60 "$API/v1/chat/completions" -H "content-type: application/json" -d "{
+ck "engine generates fresh text (completions endpoint)" \
+   'curl -sf -m 60 "$API/v1/completions" -H "content-type: application/json" -d "{
       \"model\": \"qwen3.8-flash-next\", \"prompt\": \"The capital of Utah is\",
       \"max_tokens\": 16}" | grep -q "\"text\""'
 

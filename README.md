@@ -34,7 +34,7 @@ cp .env.example .env      # set 3 variables: HF_TOKEN, WORKER=user@<worker-ip>, 
 PASS  GET http://127.0.0.1:8888/v1/models answers
 PASS  served name present (qwen3.8-flash-next)
 PASS  chat completion returns content
-PASS  engine reports a model name (generated, not cached)
+PASS  engine generates fresh text (completions endpoint)
 PASS  endpoint healthy — http://127.0.0.1:8888 serves qwen3.8-flash-next (2026-09-28T09:00:00Z)
 ```
 
