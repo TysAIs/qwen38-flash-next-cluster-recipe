@@ -1,5 +1,13 @@
 # Qwen3.8-Flash-Next on two DGX Sparks
 
+> **TysAIs fork** — defaults to the uncensored checkpoint (`hibrid48-uncensored`,
+> gated: accept its Hugging Face agreement + `hf auth login` before `./run.sh`;
+> stock `hibrid48` stays one commented line away). Also see
+> [GB10 vLLM spin-wait fix](https://github.com/TysAIs/gb10-vllm-ops) — build a
+> `-spinfix` image for the vLLM here (`patch-vllm-spinwait.sh`), point
+> `recipe.yaml`'s `image:` at it, and drop SoC temps with no throughput cost.
+> Everything else is upstream myllmbox, unchanged.
+
 ### Two checkpoints: `hibrid48`, the default — and `hibrid48-uncensored`, made from it (abliterated, gated). Switch with one line in `recipe.yaml`
 
 [`hibrid48`](https://huggingface.co/myllmbox/Qwen3.8-Flash-Next-hibrid48) (the base model, default)

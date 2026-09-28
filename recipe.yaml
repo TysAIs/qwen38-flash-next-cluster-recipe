@@ -12,10 +12,10 @@ server:
                                                       # clamp; loader page-cache drop. v3 (vLLM 0.29, image v5) = `git checkout v3`
   cpuset: "5-9,15-19"                           # the GB10's 10 Cortex-X925 3.9GHz cores (0-4,10-14 are
                                                 # 2.8GHz A725) — measured +2-3% at every concurrency
-  model: myllmbox/Qwen3.8-Flash-Next-hibrid48   # HF repo — downloaded into ./models on first run (~99G),
+  # model: myllmbox/Qwen3.8-Flash-Next-hibrid48   # HF repo — downloaded into ./models on first run (~99G),
                                                 # then synced to the worker at the SAME absolute path.
                                                 # = hibrid47 + the output head as NVFP4: 22 engine steps/s (was 17.7)
-  # model: myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored   # the abliterated body (OrcaRouter) with the same head, 98G:
+  model: myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored   # the abliterated body (OrcaRouter) with the same head, 98G:
                                                 # no refusals, NO guardrails — research / red-teaming / private use behind your
                                                 # own moderation. GATED on Hugging Face: accept its agreement, then hf auth login
                                                 # or export HF_TOKEN (run.sh checks). Nothing else in this file changes. Set
@@ -55,7 +55,7 @@ env:
                                                 # memory, so 4 is faster: +10 % tok/s at 32 concurrent, +7 % at 64, same at 1
 
 vllm:
-  served-model-name: Qwen/Qwen3.8-Flash-Next
+  served-model-name: Qwen/Qwen3.8-Flash-Next-Uncensored
   engram-config: '{"cpu_offload": false}'      # vLLM 0.30 defaults to keeping the n-gram table in pinned host memory; this
                                                 # image serves it from the GPU (the layout every number was measured on)
   gdn-prefill-backend: flashinfer               # +5 % prefill over triton from 8k to 256k tokens, same decode speed
