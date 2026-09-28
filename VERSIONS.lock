@@ -27,7 +27,7 @@ kernel: 6.17.0-1031-nvidia
 nvidia_driver: 580.173.02
 os_updates: disabled               # APT::Periodic::Unattended-Upgrade "0"; 6 kernel/driver packages apt-mark hold
 cpu_pinning: "--cpuset-cpus 5-9,15-19"   # the 10 Cortex-X925 3.9GHz cores (0-4,10-14 are 2.8GHz A725)
-fabric: 203.0.113.2 (head) <-> 203.0.113.1 (worker), iface enp1s0f1np1, HCA rocep1s0f1, RoCE v2 GID index 3 (probed at launch)
+fabric: 203.0.113.2 (head) <-> 203.0.113.1 (worker) — link-local point-to-point on the ConnectX cable (vendor reference layout), iface enp1s0f1np1, HCA rocep1s0f1, RoCE v2 GID index 3 (probed at launch)
 
 [serve]
 ports: { api: 8888, host_binding: 0.0.0.0, rendezvous: 25000 }

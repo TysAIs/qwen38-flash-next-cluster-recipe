@@ -18,10 +18,11 @@ API     http://<head>:8888/v1        context 262,144 tokens        seats 12
 boxes   2× DGX Spark (GB10) — head rank 0 (API) + worker rank 1 (--headless)
 ```
 
-**Measured on this live fleet endpoint (2026-09-28 baseline card, shared load — real numbers,
-not an idle spec): 47.8 tok/s at c=1, 99.3 at c=4, 218.6 tok/s aggregate at c=8, 36/36 requests
-OK, TTFT 0.299 s.** Why these sit below the quiet-engine ladder further down: see
-[KNOWN-ISSUES.md #2](KNOWN-ISSUES.md). The endpoint is a shared fleet service; measure it as one.
+**Measured on this live fleet endpoint (see [Real-world performance](#real-world-performance)
+for the dated, load-labeled table): 21.9–23.9 tok/s at c=1 under fleet load, 68.5 at c=1 when
+the engine is quiet, 233.7 tok/s aggregate at c=8 quiet.** Why shared-load numbers sit below the
+quiet-engine ladder further down: see [KNOWN-ISSUES.md #2](KNOWN-ISSUES.md). The endpoint is a
+shared fleet service; measure it as one.
 
 ## Quick start
 
@@ -80,7 +81,7 @@ downloading anything.
 
 | `model:` in recipe.yaml | what it is | notes |
 |---|---|---|
-| `myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored` (**active — this fleet**) | OrcaRouter's abliterated body, NVFP4 output head, 99 GB | gated, no guardrails — research / private use behind your own moderation |
+| `myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored` (**standard — this recipe ships it active**) | OrcaRouter's abliterated body, NVFP4 output head, 99 GB | gated, no guardrails — research / private use behind your own moderation |
 | `myllmbox/Qwen3.8-Flash-Next-hibrid48` | the calibrated base body, same head | one comment-flip away in `recipe.yaml`, same speed |
 
 Switching = comment one `model:` line, uncomment the other, `./start.sh`. Both load on the same
@@ -99,6 +100,28 @@ second checkpoint is a full download (different body; the 8 table shards are sha
 
 Subsets of 200 carry ~±3 points of sampling noise; treat external leaderboard rows as a sanity
 band, not a column.
+
+## Real-world performance (measured on the live fleet endpoint, 2026-09-28)
+
+Method: streaming decode rate = `(usage.completion_tokens − 1) / (end − first_token)` from the
+server's own usage report — never SSE-chunk counting, which undercounts spec-decode ~4.7×. Forced
+length (`min_tokens = max_tokens = 256`, `ignore_eos`), thinking off. Every window is
+**load-labeled** with the engine's own `vllm:num_requests_running` (other clients' requests
+in-flight; sampled before/during/after). Client: a laptop on the LAN — the inference nodes never
+run the bench.
+
+| window (2026-09-28) | fleet load during | c=1 decode | c=1 TTFT | c=4 agg | c=8 agg |
+|---|---|---|---|---|---|
+| 11:19–11:28 (busy) | 8–11 running | **21.9** tok/s (17.6–27.8) | 545 ms | 46.8–75.3 | 88.0–91.5 |
+| 11:52 (quiet) | 0–1 running | **68.5** tok/s (50.2–94.0) | 241 ms | 185.1 | 233.7 |
+| 12:51–13:0x (busy) | 6–9 running | **23.9** tok/s (21.0–30.6) | 475 ms | 42.8–70.3 | 96.6–107.1 |
+
+Long generations at a genuinely quiet engine sustain 70.7 tok/s c=1 (2,048-token forced output,
+acceptance 3.81 tok/step). The honest read: **~100 tok/s at c=1 is a quiet-engine number.** On a
+fleet that runs 6–12 requests in flight, per-stream decode is bandwidth-shared and lands
+21–31 tok/s at any bench concurrency from 2 to 24; the fleet's aggregate is what scales
+(233.7 tok/s measured at c=8 quiet, 107.1 under load, 141.3 peak under load at c=24). See
+[KNOWN-ISSUES.md #2](KNOWN-ISSUES.md).
 
 ## Quiet-engine performance ladder (for reference — NOT what a shared fleet sees)
 

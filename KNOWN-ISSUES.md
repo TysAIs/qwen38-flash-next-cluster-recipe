@@ -23,14 +23,18 @@ script hammering the endpoint while nothing else runs. The fleet endpoint is a *
 — typically 5–9 concurrent requests from agents at all times — so what you measure depends on
 what you measure:
 
-- **47.8 tok/s aggregate at c=1** (fleet baseline card, 2026-09-28): a single client's tokens
-  per second while the engine is already busy with other traffic. The engine never goes quiet;
-  your request shares every step with everyone else's.
-- **218.6 tok/s aggregate at c=8**: eight clients' combined token rate under the same shared
-  load. Consistent with the upstream ladder's c=8 rung (342 on a quiet engine) minus the
-  background traffic your bench is competing with.
-- **TTFT stays good** (median 0.299 s at c=1 under load): prefill and decode interleave well;
-  the tax is in decode sharing, not in admission.
+- **21.9–23.9 tok/s at c=1 under fleet load** (measured 2026-09-28, three windows,
+  6–11 engine requests in flight): a single client's tokens per second while the engine is
+  already busy with other traffic. The engine never goes quiet; your request shares every step
+  with everyone else's. At a genuinely quiet moment the SAME method measured 68.5 tok/s c=1
+  (peak 94.0) on this live endpoint.
+- **88–107 tok/s aggregate at c=8 under fleet load** (same 2026-09-28 windows; 233.7 when the
+  engine was quiet): eight clients' combined token rate. The per-stream tax is decode sharing —
+  your request shares every engine step with everyone else's.
+- **TTFT stays good** (241–545 ms median at c=1, busy or quiet): prefill and decode interleave
+  well; the tax is in decode sharing, not in admission. Queueing shows up as TTFT growth past
+  the seat count (c=12 benches under load saw 4–23 s medians), never as failures — every request
+  in every 2026-09-28 window completed.
 
 If you benchmark a fleet endpoint, benchmark it **as a fleet endpoint** (concurrent, sustained).
 An idle-engine number from a shared box is a measurement error, not a spec. The 36/36 requests
