@@ -114,7 +114,8 @@ run the bench.
 |---|---|---|---|---|---|
 | 11:19–11:28 (busy) | 8–11 running | **21.9** tok/s (17.6–27.8) | 545 ms | 46.8–75.3 | 88.0–91.5 |
 | 11:52 (quiet) | 0–1 running | **68.5** tok/s (50.2–94.0) | 241 ms | 185.1 | 233.7 |
-| 12:51–13:07 (busy) | 6–9 running | **23.9** tok/s (21.0–30.6) | 475 ms | 42.8–70.3 | 96.6–107.1 |
+| 13:00–13:07 (busy) | 6–9 running | **23.9** tok/s (21.0–30.6) | 475 ms | 42.8–70.3 | 96.6–107.1 |
+| 15:10–15:18 (medium) | 2–7 running | **40.1** tok/s (35.4–47.4) | 358 ms | 46.3–117.3 | 119.5–185.0 |
 
 Long generations at a genuinely quiet engine sustain 70.7 tok/s c=1 (2,048-token forced output,
 acceptance 3.81 tok/step). The honest read: **~100 tok/s at c=1 is a quiet-engine number.** On a
@@ -122,6 +123,38 @@ fleet that runs 6–12 requests in flight, per-stream decode is bandwidth-shared
 21–31 tok/s at any bench concurrency from 2 to 24; the fleet's aggregate is what scales
 (233.7 tok/s measured at c=8 quiet, 107.1 under load, 141.3 peak under load at c=24). See
 [KNOWN-ISSUES.md #2](KNOWN-ISSUES.md).
+
+### Concurrency ladder + the degradation knee (same method, full c=1→24 sweep)
+
+Per-stream decode median / aggregate, per window (fleet load = engine requests in flight,
+`vllm:num_requests_running`):
+
+| bench c | quiet window (0–1 load) | medium (2–7) | busy (6–11) | TTFT median, busy |
+|---|---|---|---|---|
+| 1 | 68.5 / — | 40.1 | 21.9–23.9 | 475–545 ms |
+| 2 | 77.3 / 117.7 | 32.4–38.8 | 22.3–26.2 | 417–518 ms |
+| 4 | 59.6 / 185.1 | 29.0–35.3 | 12.9–23.9 | 443–5549 ms |
+| 8 | 36.9 / 233.7 | 18.9–30.6 | 24.7–28.0 | 424–1394 ms |
+| 12 | — | 27.2–29.8 / 161–163 | 20.8–23.2 | 3.9–13.7 s |
+| 16 | — | 22.9–29.4 / 170–176 | 25.7–27.1 | 9–17 s |
+| 24 | — | 25.5–27.9 / 196–198 | 25.2–25.3 | 12–23 s |
+
+Every one of 436 bench requests across four windows completed — the 12-seat cap never shed a
+request, it just queued it (TTFT growth past ~12 in-flight is the queue).
+
+**The knee (per-stream < 50 % of the quiet c=1 baseline of 68.5 → 34 tok/s):** on a quiet
+engine it sits between c=8 (36.9, 54 %) and c=12; under a normal 6–9-request fleet background
+the engine is already past it at bench c=2. Decode is bandwidth-bound: per-stream collapses,
+aggregate saturates at ~200–235 tok/s and TTFT absorbs the rest.
+
+**Seat-count recommendation (measured, not yet applied — engine restart needs approval):**
+keep `max-num-seqs: 12`. The 50 %-per-stream knee lands at bench c≈12 on a quiet engine
+anyway, so 64 seats would only convert interactive streams into a batch lane: per-stream at
+c=16–24 is 22–29 tok/s at ANY setting. What the data does support: (a) a per-client admission
+limit of ~4 concurrent per agent profile, so one chatty profile cannot turn everyone else's
+TTFT into 10–20 s queues; (b) `./tune-host.sh` at the next maintenance reboot — this fleet has
+`vm.compaction_proactiveness=20` (KNOWN-ISSUES #4), worth ~10 % of decode, which is also part
+of the 68.5-vs-99 gap to the upstream quiet spec.
 
 ## Quiet-engine performance ladder (for reference — NOT what a shared fleet sees)
 
