@@ -114,7 +114,7 @@ run the bench.
 |---|---|---|---|---|---|
 | 11:19–11:28 (busy) | 8–11 running | **21.9** tok/s (17.6–27.8) | 545 ms | 46.8–75.3 | 88.0–91.5 |
 | 11:52 (quiet) | 0–1 running | **68.5** tok/s (50.2–94.0) | 241 ms | 185.1 | 233.7 |
-| 12:51–13:0x (busy) | 6–9 running | **23.9** tok/s (21.0–30.6) | 475 ms | 42.8–70.3 | 96.6–107.1 |
+| 12:51–13:07 (busy) | 6–9 running | **23.9** tok/s (21.0–30.6) | 475 ms | 42.8–70.3 | 96.6–107.1 |
 
 Long generations at a genuinely quiet engine sustain 70.7 tok/s c=1 (2,048-token forced output,
 acceptance 3.81 tok/step). The honest read: **~100 tok/s at c=1 is a quiet-engine number.** On a
@@ -128,7 +128,9 @@ fleet that runs 6–12 requests in flight, per-stream decode is bandwidth-shared
 Measured by a bench script on an otherwise **quiet** engine (image v6, hibrid48, 41 GB KV pin,
 `vm.compaction_proactiveness=0`, K=5, thinking off, 120 s windows, FlashInfer GDN prefill,
 2026-09-27). Our fleet endpoint runs 12 seats under constant agent traffic, so live measurements
-land lower (47.8 @ c=1). Both are honest — they measure different things
+land lower (21.9–23.9 @ c=1 under load, 68.5 @ c=1 at a quiet moment — the gap to 99 is the
+background agents plus this fleet's unapplied `compaction_proactiveness` (KNOWN-ISSUES #4)).
+Both are honest — they measure different things
 ([KNOWN-ISSUES.md #2](KNOWN-ISSUES.md)).
 
 | concurrent requests | tok/s | peak | per-stream | acceptance |
