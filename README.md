@@ -292,6 +292,8 @@ Everything lives in [`recipe.yaml`](recipe.yaml) with an inline comment; the one
 - **fp8 KV** is not in the v6 image (upstream PR #54846 not yet re-ported); `git checkout v3` for it.
 - Thinking is ON by default (model native); per-request `"chat_template_kwargs":
   {"enable_thinking": false}` for max speed on structured output.
+- **`patches`** (server): optional vLLM patches from [`patches/`](patches/), off by default — e.g. `patches: hermes-chat`
+  for the Hermes agent (contributed by [@yume-arasaki](https://github.com/yume-arasaki)). Applied at launch over the image's files; the image itself is unchanged.
 
 ## License
 
