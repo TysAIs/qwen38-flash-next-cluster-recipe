@@ -19,11 +19,14 @@ boxes   2× DGX Spark (GB10) — head rank 0 (API) + worker rank 1 (--headless)
 ```
 
 **Measured on this live fleet endpoint (see [Real-world performance](#real-world-performance)
-for the dated, load-labeled table): 21.9–23.9 tok/s at c=1 under fleet load, 85.4 at c=1 when
-the engine is quiet (post-compaction-fix, 2026-09-28 evening), 233.7 tok/s aggregate at c=8
-quiet.** Why shared-load numbers sit below the
-quiet-engine ladder further down: see [KNOWN-ISSUES.md #2](KNOWN-ISSUES.md). The endpoint is a
-shared fleet service; measure it as one.
+for the dated, load-labeled table): 21.9–24.5 tok/s at c=1 under daytime fleet load, 85.4 at
+c=1 when the engine is quiet (post-compaction-fix, 2026-09-28 evening), 91–122 tok/s aggregate
+at bench c=4 under load, 233.7 tok/s aggregate at c=8 quiet.** The 99 tok/s rung below is the
+vendor's dedicated-box spec, not a fleet number: on a 66-hour 1-minute Prometheus map our
+engine spent 0.15 % of minutes at 0 running (no natural quiet hour), and a 2026-09-29 daytime
+quiet-gate pass (62 min budget) never saw the window open — 0 clean trials. Why shared-load
+numbers sit below the vendor ladder: see [KNOWN-ISSUES.md #2](KNOWN-ISSUES.md). The endpoint is
+a shared fleet service; measure it as one.
 
 ## Quick start
 
@@ -102,7 +105,7 @@ second checkpoint is a full download (different body; the 8 table shards are sha
 Subsets of 200 carry ~±3 points of sampling noise; treat external leaderboard rows as a sanity
 band, not a column.
 
-## Real-world performance (measured on the live fleet endpoint, 2026-09-28)
+## Real-world performance (measured on the live fleet endpoint, 2026-09-28/29)
 
 Method: streaming decode rate = `(usage.completion_tokens − 1) / (end − first_token)` from the
 server's own usage report — never SSE-chunk counting, which undercounts spec-decode ~4.7×. Forced
@@ -121,7 +124,20 @@ run the bench.
 | **19:07–19:25, post-fix, medium** | 1–3 running | **49.6** tok/s (28.4–63.6) | 227 ms | 73.0–110.8 | 156.4 |
 | **19:07–19:25, post-fix, busy** | 3–5 running | **38.0** tok/s (21.5–44.6) | 259 ms | — | — |
 | **2026-09-29 06:25–07:05, busy (t_cbef3181 re-verify)** | 4–5 running | **36.9** tok/s (33.2–41.4) | 334 ms | 54.7–101.3 | — |
+| **2026-09-29 10:32–10:34, busy (t_ba3ead13)** | 4–8 running | — | 303–413 ms | 91.5 / 116.0 / 121.8 agg (per-stream 23.0–31.7) | — |
+| **2026-09-29 11:47–11:50, busy (t_ba3ead13)** | 6–7 running | **24.5** tok/s (20.6–29.7) | 398 ms | — | — |
 <!-- quiet-rows -->
+| **2026-09-29 quiet-gate refresh0929 (t_ba3ead13)** | window never opened (10:35–11:45: strict 0/0 exhausted 10:40–11:02, relaxed ≤1 trials all contaminated) | no clean trial — engine never reached the gate | — | — | — |
+
+The 2026-09-29 daytime re-verify (post-fix, corrected methodology: quiet-gate c=1 with
+contamination discard + load-labeled c=4 waves, client on the Mac mini): the busy-band
+numbers reproduce (c=1 24.5 @ 6–7 running, c=4 aggregate 91.5–121.8 @ 4–8 running, TTFT
+303–413 ms), and a 62-minute quiet-gate pass **never recorded one clean quiet trial** —
+the engine never hit 0-running twice-4s-apart, and every ≤1-gated trial caught a
+co-runner mid-stream. That is the 66-hour load map (0.15 % of minutes quiet) confirmed
+live, and the direct answer to the vendor's ~99: it is a dedicated-box spec; the honest
+fleet expectations are the load-labeled rows above — **quiet 85.4 (measured once, 09-28
+evening gap), 2–3 co-runners 49.6, daytime fleet 21–37.**
 
 ### 2026-09-29 — the felt number is a LOAD-POLICY lever (t_5621775a)
 
