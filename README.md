@@ -19,8 +19,9 @@ boxes   2× DGX Spark (GB10) — head rank 0 (API) + worker rank 1 (--headless)
 ```
 
 **Measured on this live fleet endpoint (see [Real-world performance](#real-world-performance)
-for the dated, load-labeled table): 21.9–23.9 tok/s at c=1 under fleet load, 68.5 at c=1 when
-the engine is quiet, 233.7 tok/s aggregate at c=8 quiet.** Why shared-load numbers sit below the
+for the dated, load-labeled table): 21.9–23.9 tok/s at c=1 under fleet load, 85.4 at c=1 when
+the engine is quiet (post-compaction-fix, 2026-09-28 evening), 233.7 tok/s aggregate at c=8
+quiet.** Why shared-load numbers sit below the
 quiet-engine ladder further down: see [KNOWN-ISSUES.md #2](KNOWN-ISSUES.md). The endpoint is a
 shared fleet service; measure it as one.
 
@@ -116,6 +117,21 @@ run the bench.
 | 11:52 (quiet) | 0–1 running | **68.5** tok/s (50.2–94.0) | 241 ms | 185.1 | 233.7 |
 | 13:00–13:07 (busy) | 6–9 running | **23.9** tok/s (21.0–30.6) | 475 ms | 42.8–70.3 | 96.6–107.1 |
 | 15:10–15:18 (medium) | 2–7 running | **40.1** tok/s (35.4–47.4) | 358 ms | 46.3–117.3 | 119.5–185.0 |
+| **19:07–19:25, post-compaction-fix, quiet (gated 0 running)** | 0 running | **85.4** tok/s (54.8–89.2) | 96 ms | — | — |
+| **19:07–19:25, post-fix, medium** | 1–3 running | **49.6** tok/s (28.4–63.6) | 227 ms | 73.0–110.8 | 156.4 |
+| **19:07–19:25, post-fix, busy** | 3–5 running | **38.0** tok/s (21.5–44.6) | 259 ms | — | — |
+
+The 19:07–19:25 windows re-run the SAME method after `vm.compaction_proactiveness=0` was applied
+live (KNOWN-ISSUES #4, closed): quiet-gated c=1 went **68.5 → 85.4 tok/s median (+25 %)** and
+medium-load c=1 went **40.1 → 49.6 (+24 %)**; every trial kept healthy spec-decode acceptance
+(3.2–4.2 tok/step). Busy-window comparison is load-mismatched (the fleet idled at 3–5 in flight
+that evening vs 6–11 earlier), so no busy-band claim is made.
+
+**Stall check (the point of the fix):** a 2,048-token forced c=1 decode (48.5 s, fleet 4 in
+flight) was streamed with per-chunk inter-arrival gaps sampled — 432 gaps spanning more than one
+former compaction cycle: p50 95 ms, p95 107 ms, **max 1.13 s, ZERO gaps >2 s**. The previously
+documented signature — a 4–5 s slowdown every ~37 s — is gone. The five residual gaps >1 s
+(≤1.13 s) are ordinary fleet-load jitter.
 
 Long generations at a genuinely quiet engine sustain 70.7 tok/s c=1 (2,048-token forced output,
 acceptance 3.81 tok/step). The honest read: **~100 tok/s at c=1 is a quiet-engine number.** On a
