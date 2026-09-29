@@ -53,13 +53,14 @@ needs **zero manual steps** and never silently regresses to plain `v6`.
 If you skip the fix anyway (point `recipe.yaml` at `:v6`), everything runs at the same speed, but a
 CPU core busy-spins while idle and SoC temps climb — not free to skip on a hot box.
 
-## 4. `vm.compaction_proactiveness` is still 20 on the live fleet
+## 4. `vm.compaction_proactiveness` — CLOSED 2026-09-28: applied + persisted on both boxes
 
-`tune-host.sh` exists, is correct, and **has not been applied** on our two boxes. Expected
-symptom: a 4–5 s decode slowdown every ~37 s (the kernel page-compactor's retry cycle migrating
-pages the GPU is using) — ~10 % of throughput and the reason some latency windows look spiky.
-`run.sh` prints the warning at every launch; we have lived with it deliberately (it changes
-nothing about correctness). One root command fixes it fleet-wide: `./tune-host.sh`.
+Applied live via `./tune-host.sh` semantics (sysctl only, **no serving restart, zero downtime**),
+verified `0` on head and worker, and persisted in `/etc/sysctl.d/99-myllmbox-compaction.conf` on
+both Sparks — it survives reboots now. The symptom it caused (a 4–5 s decode slowdown every ~37 s
+from the kernel page-compactor migrating pages the GPU is using; ~10 % of throughput, spiky
+latency windows) is documented in the pre/post load-labeled benches in the README. Reversal:
+`sudo sysctl -w vm.compaction_proactiveness=20 && sudo rm /etc/sysctl.d/99-myllmbox-compaction.conf`.
 
 ## 5. The clock cap is lost on every reboot
 

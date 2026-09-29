@@ -152,9 +152,9 @@ keep `max-num-seqs: 12`. The 50 %-per-stream knee lands at bench c≈12 on a qui
 anyway, so 64 seats would only convert interactive streams into a batch lane: per-stream at
 c=16–24 is 22–29 tok/s at ANY setting. What the data does support: (a) a per-client admission
 limit of ~4 concurrent per agent profile, so one chatty profile cannot turn everyone else's
-TTFT into 10–20 s queues; (b) `./tune-host.sh` at the next maintenance reboot — this fleet has
-`vm.compaction_proactiveness=20` (KNOWN-ISSUES #4), worth ~10 % of decode, which is also part
-of the 68.5-vs-99 gap to the upstream quiet spec.
+TTFT into 10–20 s queues; (b) ~~`./tune-host.sh` at the next maintenance reboot~~ — **applied
+live 2026-09-28** (`vm.compaction_proactiveness=0`, persisted; KNOWN-ISSUES #4 closed, post-fix
+numbers below).
 
 ## Quiet-engine performance ladder (for reference — NOT what a shared fleet sees)
 
@@ -162,8 +162,8 @@ Measured by a bench script on an otherwise **quiet** engine (image v6, hibrid48,
 `vm.compaction_proactiveness=0`, K=5, thinking off, 120 s windows, FlashInfer GDN prefill,
 2026-09-27). Our fleet endpoint runs 12 seats under constant agent traffic, so live measurements
 land lower (21.9–23.9 @ c=1 under load, 68.5 @ c=1 at a quiet moment — the gap to 99 is the
-background agents plus this fleet's unapplied `compaction_proactiveness` (KNOWN-ISSUES #4)).
-Both are honest — they measure different things
+background agents; the compaction stall was unapplied then and is now closed on this fleet —
+KNOWN-ISSUES #4). Both are honest — they measure different things
 ([KNOWN-ISSUES.md #2](KNOWN-ISSUES.md)).
 
 | concurrent requests | tok/s | peak | per-stream | acceptance |
@@ -216,9 +216,9 @@ Unified memory: the GPU driver wants **free** pages, not reclaimable ones. The k
 a password: it waits for both boxes to report ≥100 GB available before launching (a relaunch
 inside ~60 s of a teardown gives a phantom CUDA OOM), evicts its own checkpoint files from the
 page cache (`dd iflag=nocache`), and loads with `fastsafetensors` (weights in ~97 s, whole boot
-~4 min). One root setting is worth ~10 % and the kit never applies it silently:
-`./tune-host.sh` (`vm.compaction_proactiveness=0`) — not yet applied on our fleet, see
-KNOWN-ISSUES #4.
+~4 min. One root setting is worth ~10 % and the kit never applies it silently:
+`./tune-host.sh` (`vm.compaction_proactiveness=0`) — applied + persisted on our fleet since
+2026-09-28 (KNOWN-ISSUES #4, closed).
 
 ## Tuning pointers
 

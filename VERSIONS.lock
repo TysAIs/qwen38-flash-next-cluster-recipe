@@ -43,4 +43,4 @@ restart_policy: none               # containers do NOT survive a host reboot —
 - served-model-name: qwen3.8-flash-next (upstream example: Qwen/Qwen3.8-Flash-Next-Uncensored)
 - max-num-seqs: 12 — fleet is latency-first for chat agents; 64 is the throughput-first upstream default
 - cluster.env written by hand (fabric IPs match the vendor reference layout); setup.sh would produce the same file interactively
-- vm.compaction_proactiveness is still the 20 default on both boxes — ./tune-host.sh was NOT applied; expect ~10% periodic stalls (see KNOWN-ISSUES.md)
+- vm.compaction_proactiveness = 0 on both boxes (applied live 2026-09-28, no restart; persisted in /etc/sysctl.d/99-myllmbox-compaction.conf — see KNOWN-ISSUES.md #4, closed)
