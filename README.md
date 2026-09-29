@@ -120,6 +120,7 @@ run the bench.
 | **19:07–19:25, post-compaction-fix, quiet (gated 0 running)** | 0 running | **85.4** tok/s (54.8–89.2) | 96 ms | — | — |
 | **19:07–19:25, post-fix, medium** | 1–3 running | **49.6** tok/s (28.4–63.6) | 227 ms | 73.0–110.8 | 156.4 |
 | **19:07–19:25, post-fix, busy** | 3–5 running | **38.0** tok/s (21.5–44.6) | 259 ms | — | — |
+| **2026-09-29 06:25–07:05, busy (t_cbef3181 re-verify)** | 4–5 running | **36.9** tok/s (33.2–41.4) | 334 ms | 54.7–101.3 | — |
 
 The 19:07–19:25 windows re-run the SAME method after `vm.compaction_proactiveness=0` was applied
 live (KNOWN-ISSUES #4, closed): quiet-gated c=1 went **68.5 → 85.4 tok/s median (+25 %)** and
