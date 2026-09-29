@@ -123,6 +123,25 @@ run the bench.
 | **2026-09-29 06:25–07:05, busy (t_cbef3181 re-verify)** | 4–5 running | **36.9** tok/s (33.2–41.4) | 334 ms | 54.7–101.3 | — |
 <!-- quiet-rows -->
 
+### 2026-09-29 — the felt number is a LOAD-POLICY lever (t_5621775a)
+
+1-minute-resolution load map over 66 h (1,308 Prometheus samples of
+`vllm:num_requests_running`, 09-28 10:47 → 09-29 08:34 MDT): the engine spends
+**0.15 % of minutes at 0 running, 0.46 % at ≤1** — there is **no natural quiet hour
+on a normal day**. The only observed quiet pocket (09-28 11:51–12:17) sat exactly
+between two scheduled job waves; the WORST band is 03:00–05:00 (median 11–12,
+saturating the 12-seat lane) because of stacked overnight jobs. Quiet is a property
+of the calendar's GAPS, not of a clock time.
+
+Adopted policy for the orchestrator (full plan: `the load-policy plan kept outside this repository`):
+**P1** heavy work (>1,000 completion tokens) gates on `running ≤ 1 && waiting == 0`
+before each request wave; **P2** de-conflict 03:00–05:00 (move lab-sweep to 03:05,
+feeder every 30 min overnight); **P3** batch work gets `defer:quiet` and dispatches
+only inside a verified gate window; **P4** keep max-num-seqs 12.
+Expected: gated batch/deferred work moves from ~37 tok/s to the 49.6–85.4 band
+(1.3–2.3×, TTFT 334 → 96 ms); cost = queue delay inside calendar gaps. Zero config
+changes, zero restarts, zero spend.
+
 The 19:07–19:25 windows re-run the SAME method after `vm.compaction_proactiveness=0` was applied
 live (KNOWN-ISSUES #4, closed): quiet-gated c=1 went **68.5 → 85.4 tok/s median (+25 %)** and
 medium-load c=1 went **40.1 → 49.6 (+24 %)**; every trial kept healthy spec-decode acceptance
