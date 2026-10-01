@@ -95,3 +95,18 @@ the README; 12 is why a load spike queues a request instead of slowing everyone 
 `RestartPolicy=no` on both boxes by design (see #1). A crashed engine stays down until someone
 runs `./start.sh`. If you want a supervised fleet, add a systemd unit that runs
 `ExecStartPre=-docker rm -f` + `./run.sh` — but keep the memory gate; do not `--restart unless-stopped`.
+
+## 10. The live v6-spinfix-hermes image's "omitted temperature → greedy" fix is in the wrong function
+
+The fleet image built 2026-09-30 bakes the hermes-chat protocol fix into the image itself (not via
+`patches/`). The `reasoning {enabled,effort}` half landed correctly in `ChatRequest.to_sampling_params`
+and works. The temperature half landed in `to_beam_search_params` (the first textual match of the
+replace script), which the chat path never calls. Verified live 2026-10-01: an omitted temperature
+still resolves to the checkpoint's `generation_config.json` (temp 1.0, top_k 20, top_p 0.95) — 1 of 10
+identical greedy prompts came back different, while explicit `temperature: 0` was 6/6 identical.
+The build's own guard only grepped for the string anywhere in the file, so it printed VERIFIED.
+Consequence for clients (incl. Hermes): keep sending `temperature: 0` explicitly — the endpoint does
+not force greedy on omission. Fix = one-line move of the hunk in the next image build.
+Note: the repo's `patches/hermes-chat.patch` (upstream 4e4747b) applies cleanly to the stock v6 image
+(dry-run verified against the image's own file) but conflicts 1/2 hunks with the hermes image, so
+`server.patches` must stay empty while v6-spinfix-hermes is live.

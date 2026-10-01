@@ -277,8 +277,9 @@ page cache (`dd iflag=nocache`), and loads with `fastsafetensors` (weights in ~9
 
 Everything lives in [`recipe.yaml`](recipe.yaml) with an inline comment; the ones that bite:
 
-- **`max-num-seqs: 12`** — this fleet's latency-first seat count (upstream ships 64; 48 for many
-  long answers). Each admitted request also pins pool regardless of length (GDN recurrent state,
+- **`max-num-seqs: 64`** — the live fleet moved from the 12-seat latency-first setting to 64
+  (upstream default) with the 2026-10-01 fleet-known-good config. Each admitted request also
+  pins pool regardless of length (GDN recurrent state,
   36 layers × (2+K) blocks). The graph-capture list must reach seats×(K+1).
 - **`kv-cache-memory: 41G/box`** — 2,450,356 pooled tokens, paid for by half the n-gram table per
   box (`MBX_PLE_REPLICATE: "0"`; set `"1"` and drop the pin to 28G). Do not take vLLM's

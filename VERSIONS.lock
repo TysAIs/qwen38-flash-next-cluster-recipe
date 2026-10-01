@@ -1,14 +1,16 @@
 version: 1                       # schema of this lockfile (key: value lines, grouped by section)
-locked_at: 2026-09-28            # captured from the live fleet by direct inspection (docker inspect / sha256sum / sysctl)
+locked_at: 2026-10-01            # re-verified against the live fleet 2026-10-01 (docker inspect on both ranks); previously 2026-09-28
 served_model: qwen3.8-flash-next # served-model-name; backing checkpoint below
 
 [image]
-tag: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix
+tag: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix-hermes        # LIVE 2026-10-01: spinfix + hermes-chat protocol fixes baked in
 base_tag: myllmbox/qwen38-flash-next-cluster-vllm:v6
 base_registry_digest: sha256:861ac752164e0d723c5eff3f876586c6678c26ad4a516112c48745f6a101ff4d   # confirmed against Docker Hub 2026-09-28
-local_image_id: sha256:684bb374cd2ea1925f971addde05c5dd33a5ddaac5f01b2663585b7c73618e91          # IDENTICAL on head and worker
-vllm_version: 0.30.0
-spinfix: built-from-repo          # NOT on any registry BY DESIGN — run.sh self-builds it from docker/spinfix/ over the public base on first run (see KNOWN-ISSUES #3)
+local_image_id: sha256:175ef015947f2ee4f9babc61594d44a2c82aebf6d11d6328c10f17ed5c5ccaa1          # IDENTICAL on head and worker (verified 2026-10-01)
+prev_image_id: sha256:684bb374cd2ea1925f971addde05c5dd33a5ddaac5f01b2663585b7c73618e91           # v6-spinfix, preserved on both boxes as rollback
+vllm_version: 0.30.0                               # latest upstream STABLE as of 2026-10-01 (0.31.0 exists only as rc1-rc3)
+spinfix: built-from-repo          # NOT on any registry BY DESIGN — run.sh self-builds it from docker/spinfix/ over the public base on first run (see KNOWN-ISSUES #3); re-verified 2026-10-01 in the RUNNING containers on both ranks: busy_loop_s = 0.002
+hermes_chat: baked-into-live-image # reasoning {enabled,effort} object honoured (protocol.py to_sampling_params); temperature hunk MISPLACED into to_beam_search_params — omitted temperature still samples at generation_config (temp 1.0/top_k 20/top_p 0.95). See KNOWN-ISSUES #10. The repo's patches/hermes-chat.patch applies correctly to the stock v6 image (dry-run verified) but does NOT fit v6-spinfix-hermes (1 of 2 hunks) — keep server.patches empty while the hermes image is live.
 rebuild: "docker build -t myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix docker/spinfix/"   # FROM v6, one-line sed
 
 [weights]
@@ -32,7 +34,7 @@ fabric: 203.0.113.2 (head) <-> 203.0.113.1 (worker) — link-local point-to-poin
 [serve]
 ports: { api: 8888, host_binding: 0.0.0.0, rendezvous: 25000 }
 tensor_parallel: 2                 # head = rank 0 (API), worker = rank 1 (--headless)
-seats: 12                          # max-num-seqs (fleet setting; upstream default in recipe.yaml is 64)
+seats: 64                          # max-num-seqs; re-verified from the live container args 2026-10-01 (was 12 on 2026-09-28)
 kv_cache_memory_bytes: 41000000000 # per box
 restart_policy: none               # containers do NOT survive a host reboot — ./start.sh (or ./run.sh) after every reboot
 
@@ -41,6 +43,6 @@ restart_policy: none               # containers do NOT survive a host reboot —
 - port: 8888 (upstream example default is 8000) — set in recipe.yaml, .env PORT default here matches
 - host: 0.0.0.0 — API exposed on the LAN, not loopback
 - served-model-name: qwen3.8-flash-next (upstream example: Qwen/Qwen3.8-Flash-Next-Uncensored)
-- max-num-seqs: 12 — fleet is latency-first for chat agents; 64 is the throughput-first upstream default
+- max-num-seqs: 64 — re-verified from live container args 2026-10-01 (fleet was 12 latency-first on 2026-09-28; live config moved to the upstream throughput default of 64, matching the tagged fleet-known-good recipe)
 - cluster.env written by hand (fabric IPs match the vendor reference layout); setup.sh would produce the same file interactively
 - vm.compaction_proactiveness = 0 on both boxes (applied live 2026-09-28, no restart; persisted in /etc/sysctl.d/99-myllmbox-compaction.conf — see KNOWN-ISSUES.md #4, closed)
