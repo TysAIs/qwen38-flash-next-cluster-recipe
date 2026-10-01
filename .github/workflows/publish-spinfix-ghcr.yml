@@ -136,28 +136,27 @@ jobs:
           PKG: qwen38-flash-next-cluster-vllm
         run: |
           set -euo pipefail
-          code=$(curl -s -o /tmp/vis.json -w '%{http_code}' -X PUT \
-            -H "Authorization: Bearer $GHCR_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/orgs/$OWNER/actions/packages/$PKG/visibility" \
-            || true)
-          if [ "$code" = "200" ]; then
-            echo "package visibility -> public"
-          else
-            # Not an org, or endpoint unavailable to this token. Try the user
-            # endpoint, then fall back to reporting the current visibility.
-            code2=$(curl -s -o /tmp/vis2.json -w '%{http_code}' -X PUT \
+          # The container-package visibility endpoint takes package_type as a
+          # QUERY param and the package name as a path segment -- not the older
+          # /users/{u}/packages/container/{pkg}/visibility form, which 404s.
+          for url in \
+            "https://api.github.com/users/$OWNER/packages/$PKG/visibility?package_type=container" \
+            "https://api.github.com/orgs/$OWNER/packages/$PKG/visibility?package_type=container" ; do
+            code=$(curl -s -o /tmp/vis.json -w '%{http_code}' -X PUT \
               -H "Authorization: Bearer $GHCR_TOKEN" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/users/$OWNER/packages/container/$PKG/visibility" \
-              || true)
-            if [ "$code2" = "200" ]; then
-              echo "package visibility -> public (user endpoint)"
-            else
-              echo "::warning::could not set visibility automatically (org=$code user=$code2)"
-              cat /tmp/vis.json /tmp/vis2.json 2>/dev/null | head -c 300 || true
+              -d '{"visibility":"public"}' \
+              "$url" || true)
+            echo "PUT ${url#https://api.github.com} -> $code"
+            if [ "$code" = "200" ]; then
+              echo "package visibility -> public"
+              echo "visibility=public" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
-          fi
+          done
+          echo "::warning::GITHUB_TOKEN could not flip package visibility; the image is published but needs an authenticated ghcr login to pull"
+          echo "visibility=unchanged" >> "$GITHUB_OUTPUT"
+        id: visstep
 
       - name: Summary
         run: |
@@ -169,6 +168,7 @@ jobs:
             echo "- image id: \`${{ steps.prov.outputs.image_id }}\`"
             echo "- arch: \`${{ steps.prov.outputs.arch }}\`"
             echo "- spinfix assertion: \`${{ steps.prov.outputs.spinfix_assert }}\`"
+            echo "- package visibility: \`${{ steps.visstep.outputs.visibility }}\`"
             echo ""
             echo "Pull it with:"
             echo '```'
