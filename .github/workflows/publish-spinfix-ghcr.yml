@@ -49,7 +49,10 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ${{ inputs.source == 'local' && '['self-hosted', 'linux', 'arm64']' || 'ubuntu-24.04-arm' }}
+    # NB: the label list must be a real array, not a string that looks like one,
+    # hence fromJSON. A plain "['self-hosted', 'linux', 'arm64']" string makes
+    # GitHub reject the whole workflow file as invalid.
+    runs-on: ${{ inputs.source == 'local' && fromJSON('["self-hosted","linux","arm64"]') || 'ubuntu-24.04-arm' }}
     steps:
       - name: Log in to ghcr with the automatic GITHUB_TOKEN
         # No PAT required. GITHUB_TOKEN is scoped to this repo and can write
