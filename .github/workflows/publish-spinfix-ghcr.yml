@@ -63,13 +63,16 @@ jobs:
       - name: Log in to ghcr with the automatic GITHUB_TOKEN
         # No PAT required. GITHUB_TOKEN is scoped to this repo and can write
         # packages owned by TysAIs. It is masked in logs and expires with the job.
+        # NB: do not `docker logout` here. The login writes to the runner's
+        # ~/.docker/config.json, and logging out in the same step deletes the
+        # credential the later push depends on ("User cannot be authenticated").
+        # Log out in a trailing always() step instead.
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           echo "$GHCR_TOKEN" | docker login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
-          docker logout ghcr.io
 
       - name: Build from source over the public base
         if: inputs.source == 'rebuild'
@@ -122,3 +125,11 @@ jobs:
             echo "docker pull $IMAGE_REF"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Log out of ghcr
+        # MUST be the last step. docker login writes the credential to the
+        # runner's ~/.docker/config.json and docker logout deletes it, so this
+        # has to run AFTER the push. `if: always()` means "run even if an earlier
+        # step failed" -- it does not move the step later in the job.
+        if: always()
+        run: docker logout ghcr.io || true
