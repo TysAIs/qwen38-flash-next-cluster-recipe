@@ -158,6 +158,26 @@ jobs:
           echo "visibility=unchanged" >> "$GITHUB_OUTPUT"
         id: visstep
 
+      - name: Verify as a consumer (pull the published ref back)
+        # Prove the registry copy is really pullable and really is the image the
+        # fleet runs. `docker pull` reuses layers already in the content store by
+        # digest, so this is fast and does NOT remove or retag the local fleet
+        # image (the ghcr ref is a different repository name entirely).
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE_REF"
+          pulled_id=$(docker image inspect --format '{{.Id}}' "$IMAGE_REF")
+          echo "pulled_image_id=$pulled_id"
+          expected='sha256:684bb374cd2ea1925f971addde05c5dd33a5ddaac5f01b2663585b7c73618e91'
+          if [ "$pulled_id" = "$expected" ]; then
+            echo "::notice::pulled image id matches the verified fleet image"
+          else
+            echo "::warning::pulled id $pulled_id != verified $expected (expected only for source=local)"
+          fi
+          docker run --rm --entrypoint sh "$IMAGE_REF" -c \
+            "grep -q 'busy_loop_s: float = 0.002,' /usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/shm_broadcast.py" \
+            && echo "::notice::spinfix present in the PULLED image"
+
       - name: Summary
         run: |
           {
@@ -172,8 +192,15 @@ jobs:
             echo ""
             echo "Pull it with:"
             echo '```'
+            echo "docker login ghcr.io -u TysAIs   # token needs read:packages"
             echo "docker pull $IMAGE_REF"
             echo '```'
+            echo ""
+            echo "The package is published but still private: a workflow's GITHUB_TOKEN"
+            echo "cannot change package visibility. To pull it you need any credential"
+            echo "with \`read:packages\`, or flip it to public once in the web UI"
+            echo "(Settings > Packages > qwen38-flash-next-cluster-vllm > Change visibility)."
+            echo "Until then, rebuilding from docker/spinfix/ remains a zero-credential path."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Log out of ghcr
