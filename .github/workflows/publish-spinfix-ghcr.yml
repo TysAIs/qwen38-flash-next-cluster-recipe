@@ -53,6 +53,12 @@ jobs:
     # hence fromJSON. A plain "['self-hosted', 'linux', 'arm64']" string makes
     # GitHub reject the whole workflow file as invalid.
     runs-on: ${{ inputs.source == 'local' && fromJSON('["self-hosted","linux","arm64"]') || 'ubuntu-24.04-arm' }}
+    env:
+      # Docker requires fully lowercase repository paths, but the GitHub owner is
+      # "TysAIs". ghcr namespaces are case-insensitive, so lowercase the path.
+      # Every step below uses $IMAGE_REF, never ${{ github.repository_owner }}
+      # spliced directly into a reference.
+      IMAGE_REF: ghcr.io/tysais/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}
     steps:
       - name: Log in to ghcr with the automatic GITHUB_TOKEN
         # No PAT required. GITHUB_TOKEN is scoped to this repo and can write
@@ -71,7 +77,7 @@ jobs:
           set -euo pipefail
           docker build \
             --build-arg MBX_BASE="${{ inputs.base_image }}" \
-            -t "ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}" \
+            -t "$IMAGE_REF" \
             -f docker/spinfix/Dockerfile \
             .
 
@@ -79,7 +85,7 @@ jobs:
         id: prov
         run: |
           set -euo pipefail
-          REF="ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}"
+          REF="$IMAGE_REF"
           if [ "${{ inputs.source }}" = "local" ]; then
             SRC="${{ inputs.local_image }}"
             docker tag "$SRC" "$REF"
@@ -98,14 +104,14 @@ jobs:
       - name: Push to ghcr
         run: |
           set -euo pipefail
-          docker push "ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}"
+          docker push "$IMAGE_REF"
 
       - name: Summary
         run: |
           {
             echo "### Published v6-spinfix to ghcr"
             echo ""
-            echo "- image: \`ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}\`"
+            echo "- image: \`$IMAGE_REF\`"
             echo "- source: \`${{ steps.prov.outputs.source }}\`"
             echo "- image id: \`${{ steps.prov.outputs.image_id }}\`"
             echo "- arch: \`${{ steps.prov.outputs.arch }}\`"
@@ -113,6 +119,6 @@ jobs:
             echo ""
             echo "Pull it with:"
             echo '```'
-            echo "docker pull ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}"
+            echo "docker pull $IMAGE_REF"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
