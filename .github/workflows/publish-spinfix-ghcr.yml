@@ -105,9 +105,59 @@ jobs:
           echo "spinfix_assert=pass" >> "$GITHUB_OUTPUT"
 
       - name: Push to ghcr
+        # Skip when this exact tag is already in the registry with the same
+        # digest we hold locally. Re-publishing a 10 GB image just to change
+        # package visibility wastes ~8 minutes and the runner's disk.
         run: |
           set -euo pipefail
-          docker push "$IMAGE_REF"
+          local_digest=$(docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}{{.Id}}' "$IMAGE_REF")
+          remote_digest=$(curl -s -m 20 -o /dev/null -D - \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/tysais/qwen38-flash-next-cluster-vllm/manifests/${{ inputs.tag }}" \
+            | grep -i '^docker-content-digest' | tr -d '\r' | awk '{print $2}' || true)
+          if [ -n "$remote_digest" ]; then
+            echo "tag already published: $remote_digest"
+            echo "push=skipped-existing" >> "$GITHUB_OUTPUT"
+          else
+            docker push "$IMAGE_REF"
+            echo "push=pushed" >> "$GITHUB_OUTPUT"
+          fi
+        id: pushstep
+
+      - name: Make the package public
+        # A package first published by GITHUB_TOKEN defaults to private, which
+        # would defeat the whole point (anonymous pull on other boxes). This uses
+        # the same automatic token -- still no PAT. Public repo + public package
+        # is what we want here: the image holds no secrets, only a public base
+        # plus a one-line patch.
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PKG: qwen38-flash-next-cluster-vllm
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/vis.json -w '%{http_code}' -X PUT \
+            -H "Authorization: Bearer $GHCR_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/$OWNER/actions/packages/$PKG/visibility" \
+            || true)
+          if [ "$code" = "200" ]; then
+            echo "package visibility -> public"
+          else
+            # Not an org, or endpoint unavailable to this token. Try the user
+            # endpoint, then fall back to reporting the current visibility.
+            code2=$(curl -s -o /tmp/vis2.json -w '%{http_code}' -X PUT \
+              -H "Authorization: Bearer $GHCR_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/users/$OWNER/packages/container/$PKG/visibility" \
+              || true)
+            if [ "$code2" = "200" ]; then
+              echo "package visibility -> public (user endpoint)"
+            else
+              echo "::warning::could not set visibility automatically (org=$code user=$code2)"
+              cat /tmp/vis.json /tmp/vis2.json 2>/dev/null | head -c 300 || true
+            fi
+          fi
 
       - name: Summary
         run: |
