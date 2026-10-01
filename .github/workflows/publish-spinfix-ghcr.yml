@@ -1,0 +1,115 @@
+name: publish-spinfix-ghcr
+
+# Publishes the GB10 CPU spin-wait fix image (docker/spinfix/) to ghcr.io/TysAIs.
+#
+# Why this exists: the spinfix image is a one-line sed over the public v6 base
+# (busy_loop_s: 1 -> 0.002 in vllm/distributed/device_communicators/shm_broadcast.py).
+# run.sh can always rebuild it from source, so ghcr is a convenience -- it lets
+# pull-everyone boxes skip the build. Nothing here is required for a working fleet.
+#
+# No PAT is needed: the workflow authenticates to ghcr with the automatic
+# GITHUB_TOKEN, which carries `packages: write` for the owning org/user.
+# That only works because this repo is PUBLIC and Actions is enabled.
+#
+# Two publish paths (workflow_dispatch input `source`):
+#   local   (default) -- tag + push an image that already exists on a self-hosted
+#                        runner. Preserves the exact image id the fleet was
+#                        verified against (byte-identical, no rebuild risk).
+#                        Requires a registered self-hosted ARM64 runner.
+#   rebuild           -- build docker/spinfix/ from the public v6 base and push.
+#                        Runs on a GitHub-hosted ARM64 runner; needs no runner
+#                        registration. Produces a functionally identical image
+#                        but NOT the same image id as `local`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "local = push the image already on the runner; rebuild = build from docker/spinfix/"
+        required: true
+        default: local
+        type: choice
+        options: [local, rebuild]
+      local_image:
+        description: "source=local only: image already present on the runner"
+        required: false
+        default: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix
+      tag:
+        description: "ghcr tag to publish"
+        required: false
+        default: v6-spinfix
+      base_image:
+        description: "source=rebuild only: public base image"
+        required: false
+        default: myllmbox/qwen38-flash-next-cluster-vllm:v6
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ${{ inputs.source == 'local' && '['self-hosted', 'linux', 'arm64']' || 'ubuntu-24.04-arm' }}
+    steps:
+      - name: Log in to ghcr with the automatic GITHUB_TOKEN
+        # No PAT required. GITHUB_TOKEN is scoped to this repo and can write
+        # packages owned by TysAIs. It is masked in logs and expires with the job.
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+          docker logout ghcr.io
+
+      - name: Build from source over the public base
+        if: inputs.source == 'rebuild'
+        run: |
+          set -euo pipefail
+          docker build \
+            --build-arg MBX_BASE="${{ inputs.base_image }}" \
+            -t "ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}" \
+            -f docker/spinfix/Dockerfile \
+            .
+
+      - name: Report provenance
+        id: prov
+        run: |
+          set -euo pipefail
+          REF="ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}"
+          if [ "${{ inputs.source }}" = "local" ]; then
+            SRC="${{ inputs.local_image }}"
+            docker tag "$SRC" "$REF"
+            echo "source=tagged-existing"        >> "$GITHUB_OUTPUT"
+          else
+            echo "source=built-from-source"      >> "$GITHUB_OUTPUT"
+          fi
+          echo "image_id=$(docker image inspect --format '{{.Id}}' "$REF")" >> "$GITHUB_OUTPUT"
+          echo "arch=$(docker image inspect --format '{{.Architecture}}' "$REF")"   >> "$GITHUB_OUTPUT"
+          # Assert the fix is actually present before publishing it.
+          docker run --rm --entrypoint sh "$REF" -c \
+            "grep -q 'busy_loop_s: float = 0.002,' /usr/local/lib/python3.12/dist-packages/vllm/distributed/device_communicators/shm_broadcast.py" \
+            || { echo "::error::spinfix assertion failed - refusing to publish"; exit 1; }
+          echo "spinfix_assert=pass" >> "$GITHUB_OUTPUT"
+
+      - name: Push to ghcr
+        run: |
+          set -euo pipefail
+          docker push "ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published v6-spinfix to ghcr"
+            echo ""
+            echo "- image: \`ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}\`"
+            echo "- source: \`${{ steps.prov.outputs.source }}\`"
+            echo "- image id: \`${{ steps.prov.outputs.image_id }}\`"
+            echo "- arch: \`${{ steps.prov.outputs.arch }}\`"
+            echo "- spinfix assertion: \`${{ steps.prov.outputs.spinfix_assert }}\`"
+            echo ""
+            echo "Pull it with:"
+            echo '```'
+            echo "docker pull ghcr.io/${{ github.repository_owner }}/qwen38-flash-next-cluster-vllm:${{ inputs.tag }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
