@@ -9,6 +9,16 @@ server:
                                                       # fix (busy_loop_s 1 -> 0.002; SoC temps, no throughput cost). Intentionally
                                                       # NOT on any registry: run.sh BUILDS it from docker/spinfix/ over the public
                                                       # base below, on first run — zero manual steps (see KNOWN-ISSUES #3).
+                                                      # !! The LIVE two-Spark fleet runs v6-spinfix-hermes instead (this + a
+                                                      # hermes-chat protocol patch), which this repo does NOT vendor. Leaving the
+                                                      # pin here is deliberate: run.sh's ensure_image would BUILD the
+                                                      # v6-spinfix-hermes TAG from docker/spinfix/ and silently ship an image
+                                                      # WITHOUT that patch — identical tag, different engine. See VERSIONS.lock
+                                                      # [image.live_fleet] and KNOWN-ISSUES #10.
+  # THE FIX, once you want the live engine from this repo: vendor patches/hermes-chat.patch from
+  # upstream myllmbox (47 lines, commit 4e4747b), teach docker/spinfix/Dockerfile to apply it (with
+  # the same build-time `grep` assertions the live image carries), THEN flip this pin. Do not flip
+  # the pin alone — that is the silent-different-engine trap.
   # image: myllmbox/qwen38-flash-next-cluster-vllm:v6 # upstream pin, public (digest in README) = vLLM 0.30.0 (vllm/vllm-openai)
                                                       # + patches: the NVFP4 n-gram table on 0.30's embedding plugin; the
                                                       # 4-bit output head (hibrid48) — stock 0.30 cannot load either; the
@@ -83,11 +93,14 @@ vllm:
   load-format: fastsafetensors                  # the loader every boot figure below was measured with (weights in ~97 s,
                                                 # the whole boot ~4 min); remove for vLLM's default safetensors loader
   max-model-len: 262144                         # the model's native max
-  max-num-seqs: 12                              # THIS FLEET: 12 seats — latency-first for a shared chat-agent endpoint
-                                                # (upstream default 64: 64 seats × ~38k tokens of pool each (2.45M / 64)). With K=5 each running request
-                                                # pins more pool at admission (the model's GDN recurrent state + the longer draft
-                                                # ring): 64 long answers fill the pool after ~3 min and requests start to queue.
-                                                # 48 keeps headroom (~75 % at 48 pasture-length streams)
+  max-num-seqs: 64                             # CORRECTED 2026-10-01 from 12 (card t_92c61b4a): the live fleet
+                                                # has run 64 seats since 2026-10-01 12:23 (box commit ae04692), verified
+                                                # by docker inspect on both ranks. 64 seats × ~38k tokens of pool each
+                                                # (2.45M / 64). With K=5 each running request pins more pool at
+                                                # admission (the model's GDN recurrent state + the longer draft ring):
+                                                # 64 long answers fill the pool after ~3 min and requests start to queue.
+                                                # 12 was the latency-first setting for a shared chat-agent endpoint —
+                                                # if you want that posture back, set 12 here deliberately.
   max-num-batched-tokens: 8192                  # also the image-input encoder budget — keep for image requests
                                                 # (4096 made 0.29 add a compile range that crashed the MoE profile run)
   enable-prefix-caching: true

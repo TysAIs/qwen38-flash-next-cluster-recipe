@@ -23,6 +23,9 @@ fleet on 2026-09-28 (`docker inspect`, `sysctl`, `sha256sum` — the numbers in 
   readable patches (NVFP4 n-gram table plugin, 4-bit output head, fused MTP draft, QSA clamp,
   loader cache-drop) + the GB10 spin-wait sed. Both boxes run the byte-identical image id
   (`684bb374cd2e…`). See `docker/spinfix/` and the README's image section.
+  **The live fleet actually runs `v6-spinfix-hermes` (`175ef015…`), which adds a chat-protocol
+  patch this repo does not vendor — see [KNOWN-ISSUES.md #10](KNOWN-ISSUES.md) and
+  `VERSIONS.lock [image.live_fleet]`.**
 - **Weights** `myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored` (NVFP4 quantized, ~99 GB, 25
   safetensors): real directory at `<repo>/models/…` on BOTH boxes at the same absolute path
   (the container mounts `models/` at `/models` and cannot follow symlinks). HF revision
@@ -31,7 +34,7 @@ fleet on 2026-09-28 (`docker inspect`, `sysctl`, `sha256sum` — the numbers in 
   (`--master-addr 203.0.113.2:25000`); worker is rank 1 `--headless`. The launch order is
   head-first, every time — that is the order every successful boot of this model has used.
 - **KV**: `--kv-cache-memory 41000000000` (41 GB/box pinned, bf16, 2.45M pooled tokens),
-  `--block-size 1632` (the K=5 attention ring must divide it), 12 seats, 262,144 context.
+  `--block-size 1632` (the K=5 attention ring must divide it), 64 seats, 262,144 context.
 - **Speculative decoding**: MTP, K=5, sampled drafts, block verification
   (`--speculative-config`), acceptance ~4.8–5.1 on code.
 - **Container shape** (both boxes): host networking, `--ipc=host`, `--cpuset-cpus 5-9,15-19`

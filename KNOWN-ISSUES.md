@@ -83,15 +83,53 @@ available on BOTH boxes before launching (`wait_mem`); if you bypass run.sh, wai
 Same family of trap: page-cache build-up stalling a load (`run.sh` evicts its own checkpoint
 files with `dd iflag=nocache`, no root needed).
 
-## 8. 12 seats is a fleet decision, not an engine limit
+## 8. Seats are a fleet decision, not an engine limit — and this repo now pins 64
 
-`max-num-seqs: 12` trades top-end throughput for per-agent latency + pool headroom on a shared
-endpoint. The engine seats 64 (upstream default; 48 recommended for many-long-answer loads).
-Raise it in `recipe.yaml` together with the graph-capture list logic in the tuning section of
-the README; 12 is why a load spike queues a request instead of slowing everyone down.
+**Corrected 2026-10-01 (card t_92c61b4a):** this section and `recipe.yaml` both said `max-num-seqs: 12`,
+but the live two-Spark fleet has run **64** since 2026-10-01 12:23 (verified by `docker inspect` on both
+ranks). 64 is now the pin in `recipe.yaml` and `VERSIONS.lock [serve] seats`.
+
+`max-num-seqs` trades top-end throughput for per-request latency + pool headroom on a shared
+endpoint. The engine seats 64; 48 is a reasonable middle for many-long-answer loads (the
+graph-capture list in `recipe.yaml` reaches seats×6 = 384, so graphs cover every setting ≤ 64).
+If you change it, change it together with the graph-capture list logic in the tuning section of
+the README. 12 was the latency-first posture for a shared chat-agent endpoint — set it back
+deliberately if that is the workload again.
 
 ## 9. Containers do not auto-restart
 
 `RestartPolicy=no` on both boxes by design (see #1). A crashed engine stays down until someone
 runs `./start.sh`. If you want a supervised fleet, add a systemd unit that runs
 `ExecStartPre=-docker rm -f` + `./run.sh` — but keep the memory gate; do not `--restart unless-stopped`.
+
+## 10. This repo does not build the image the live fleet runs (`v6-spinfix-hermes`)
+
+Found by a live-vs-published drift audit on 2026-10-01 (card t_92c61b4a). Recorded, not fixed —
+fixing it means deciding whether the fleet keeps the protocol patch.
+
+The live two-Spark cluster runs `myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix-hermes`
+(`sha256:175ef015…`, identical on both ranks). That is `v6-spinfix` **plus** a chat-protocol patch
+(`patches/hermes-chat.patch` upstream, 47 lines): it honours a top-level
+`{"reasoning": {"enabled","effort"}}` object, and makes an **omitted** `temperature` greedy instead
+of sampling. Both are asserted at build time, and the image carries
+`LABEL mbx.hermes_chat="reasoning object honoured; omitted temperature -> greedy"`.
+
+This repo has **no `patches/` directory**, and `docker/spinfix/Dockerfile` applies only the
+`busy_loop_s` sed. So `ensure_image` (see #3) would *build* the `v6-spinfix-hermes` tag from that
+Dockerfile and hand you an image **without** the protocol patch — same tag, different engine, and
+the `LABEL` assertions that make the real image self-checking would be absent. That is why
+`recipe.yaml` still pins `v6-spinfix` with a warning rather than matching the live tag.
+
+Consequences to know before you "fix" it:
+
+- A fresh `./run.sh` of this repo gives you an engine that **does not** honour a `reasoning`
+  object, and **does** sample when the client omits `temperature`. Reproducibility gap, not a
+  cosmetic one.
+- `v6-spinfix-hermes` is on **no registry** (Docker Hub tag lookup MISSING 2026-10-01) — it exists
+  only as a local build on the two Sparks.
+- `.github/workflows/publish-spinfix-ghcr.yml` asserts `sha256:684bb374…` (the `v6-spinfix` image),
+  so CI publishes and verifies the image this repo builds — **not** the one the fleet runs.
+
+The honest fix, in order: vendor `patches/hermes-chat.patch`, teach `docker/spinfix/Dockerfile` to
+apply it with the same build-time `grep` assertions, then flip the `recipe.yaml` pin. Do not flip
+the pin alone. Live-image facts are pinned in `VERSIONS.lock [image.live_fleet]`.

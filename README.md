@@ -153,7 +153,8 @@ Adopted policy for the orchestrator (full plan: `the load-policy plan kept outsi
 **P1** heavy work (>1,000 completion tokens) gates on `running ≤ 1 && waiting == 0`
 before each request wave; **P2** de-conflict 03:00–05:00 (move lab-sweep to 03:05,
 feeder every 30 min overnight); **P3** batch work gets `defer:quiet` and dispatches
-only inside a verified gate window; **P4** keep max-num-seqs 12.
+only inside a verified gate window; **P4** seat count — was `max-num-seqs 12` when this was
+written; the live fleet has since moved to **64** (2026-10-01, corrected in `recipe.yaml`).
 Expected: gated batch/deferred work moves from ~37 tok/s to the 49.6–85.4 band
 (1.3–2.3×, TTFT 334 → 96 ms); cost = queue delay inside calendar gaps. Zero config
 changes, zero restarts, zero spend.
@@ -200,8 +201,10 @@ engine it sits between c=8 (36.9, 54 %) and c=12; under a normal 6–9-request f
 the engine is already past it at bench c=2. Decode is bandwidth-bound: per-stream collapses,
 aggregate saturates at ~200–235 tok/s and TTFT absorbs the rest.
 
-**Seat-count recommendation (measured, not yet applied — engine restart needs approval):**
-keep `max-num-seqs: 12`. The 50 %-per-stream knee lands at bench c≈12 on a quiet engine
+**Seat-count note (the measurement below is from the 12-seat era; the pin has since moved):**
+at the time this was written the fleet ran `max-num-seqs: 12` and the recommendation was to keep it.
+The live fleet has since moved to **64** (2026-10-01) — see `recipe.yaml`. The underlying observation
+still holds: the 50 %-per-stream knee lands at bench c≈12 on a quiet engine
 anyway, so 64 seats would only convert interactive streams into a batch lane: per-stream at
 c=16–24 is 22–29 tok/s at ANY setting. What the data does support: (a) a per-client admission
 limit of ~4 concurrent per agent profile, so one chatty profile cannot turn everyone else's
@@ -213,7 +216,8 @@ numbers below).
 
 Measured by a bench script on an otherwise **quiet** engine (image v6, hibrid48, 41 GB KV pin,
 `vm.compaction_proactiveness=0`, K=5, thinking off, 120 s windows, FlashInfer GDN prefill,
-2026-09-27). Our fleet endpoint runs 12 seats under constant agent traffic, so live measurements
+2026-09-27). Our fleet endpoint has run under constant agent traffic (12 seats then, 64 now —
+see `recipe.yaml`), so live measurements
 land lower (21.9–23.9 @ c=1 under load, 68.5 @ c=1 at a quiet moment — the gap to 99 is the
 background agents; the compaction stall was unapplied then and is now closed on this fleet —
 KNOWN-ISSUES #4). Both are honest — they measure different things
@@ -247,13 +251,19 @@ engine steps), QSA pre-indexer rope clamp (`03`), loader page-cache drop (`13`),
 (`16`, `17`). Registry digest
 `sha256:861ac752164e0d723c5eff3f876586c6678c26ad4a516112c48745f6a101ff4d`.
 
-This fleet pins **`v6-spinfix`**: that image + a one-line sed (`busy_loop_s 1 → 0.002` in vLLM's
+This repo builds and pins **`v6-spinfix`**: that image + a one-line sed (`busy_loop_s 1 → 0.002` in vLLM's
 shm broadcast) that stops an idle CPU core spin-waiting and heating the SoC — zero throughput
 cost. It is deliberately **not on any registry**: `./start.sh` builds it from
 [docker/spinfix/](docker/spinfix/Dockerfile) over the public `v6` base on first run and ships it
 to the worker (`docker save | ssh docker load`); background in
 [TysAIs/gb10-vllm-ops](https://github.com/TysAIs/gb10-vllm-ops) and
 [KNOWN-ISSUES.md #3](KNOWN-ISSUES.md).
+
+> **The live two-Spark fleet runs `v6-spinfix-hermes`, not this repo's `v6-spinfix`.** It adds a
+> chat-protocol patch (honours a top-level `reasoning` object; omitted `temperature` → greedy) that
+> this repo does not vendor, and it is on no registry. A fresh `./run.sh` here therefore yields a
+> *different engine* than production. Full detail and the correct fix order:
+> [KNOWN-ISSUES.md #10](KNOWN-ISSUES.md); live facts in `VERSIONS.lock [image.live_fleet]`.
 
 ## RDMA or it is lying to you
 
@@ -277,7 +287,8 @@ page cache (`dd iflag=nocache`), and loads with `fastsafetensors` (weights in ~9
 
 Everything lives in [`recipe.yaml`](recipe.yaml) with an inline comment; the ones that bite:
 
-- **`max-num-seqs: 12`** — this fleet's latency-first seat count (upstream ships 64; 48 for many
+- **`max-num-seqs: 64`** — this fleet's seat count (upstream ships 64; it was 12, the
+  latency-first setting, until 2026-10-01; 48 for many
   long answers). Each admitted request also pins pool regardless of length (GDN recurrent state,
   36 layers × (2+K) blocks). The graph-capture list must reach seats×(K+1).
 - **`kv-cache-memory: 41G/box`** — 2,450,356 pooled tokens, paid for by half the n-gram table per

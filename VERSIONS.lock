@@ -3,6 +3,8 @@ locked_at: 2026-09-28            # captured from the live fleet by direct inspec
 served_model: qwen3.8-flash-next # served-model-name; backing checkpoint below
 
 [image]
+# NOTE: `tag`/`local_image_id` below are what THIS REPO BUILDS AND PUBLISHES. They are NOT what the
+# live fleet runs — see [image.live_fleet] (corrected 2026-10-01, card t_92c61b4a).
 tag: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix
 base_tag: myllmbox/qwen38-flash-next-cluster-vllm:v6
 base_registry_digest: sha256:861ac752164e0d723c5eff3f876586c6678c26ad4a516112c48745f6a101ff4d   # confirmed against Docker Hub 2026-09-28
@@ -10,6 +12,24 @@ local_image_id: sha256:684bb374cd2ea1925f971addde05c5dd33a5ddaac5f01b2663585b7c7
 vllm_version: 0.30.0
 spinfix: built-from-repo          # NOT on any registry BY DESIGN — run.sh self-builds it from docker/spinfix/ over the public base on first run (see KNOWN-ISSUES #3)
 rebuild: "docker build -t myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix docker/spinfix/"   # FROM v6, one-line sed
+
+[image.live_fleet]                # what the two Sparks ACTUALLY run (docker inspect, 2026-10-01, both ranks)
+tag: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix-hermes
+local_image_id: sha256:175ef015947f2ee4f9babc61594d44a2c82aebf6d11d6328c10f17ed5c5ccaa1          # IDENTICAL on head and worker
+built_from: myllmbox/qwen38-flash-next-cluster-vllm:v6-spinfix                                   # LABEL mbx.base
+delta: patches/hermes-chat.patch — honours a top-level {"reasoning": {"enabled","effort"}} object and
+       makes an OMITTED temperature greedy (0) on the chat path. Applied to
+       /usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/chat_completion/protocol.py;
+       both edits asserted at build time against $PT. LABEL mbx.hermes_chat.
+NOT_REPRODUCIBLE_HERE: true       # this repo has NO patches/ directory and docker/spinfix/Dockerfile applies
+                                  # only the busy_loop_s sed. run.sh's ensure_image would BUILD the
+                                  # v6-spinfix-hermes TAG from that Dockerfile and silently produce an
+                                  # image WITHOUT the hermes-chat patch — same tag, different engine.
+                                  # Do NOT set server.image to v6-spinfix-hermes until the patch is
+                                  # vendored here. Upstream myllmbox carries patches/hermes-chat.patch
+                                  # (47 lines, commit 4e4747b) with a patches: opt-in in recipe.yaml.
+registry_status: not on Docker Hub (verified 2026-10-01: hub v2 tag lookup MISSING); ghcr.io/tysais
+                 needs auth. Present only as a local build on both Sparks.
 
 [weights]
 repo: myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored      # gated (auto) on Hugging Face; base_model: Qwen/Qwen3.8-Flash-Next
@@ -32,15 +52,17 @@ fabric: 203.0.113.2 (head) <-> 203.0.113.1 (worker) — link-local point-to-poin
 [serve]
 ports: { api: 8888, host_binding: 0.0.0.0, rendezvous: 25000 }
 tensor_parallel: 2                 # head = rank 0 (API), worker = rank 1 (--headless)
-seats: 12                          # max-num-seqs (fleet setting; upstream default in recipe.yaml is 64)
+seats: 64                          # max-num-seqs — CORRECTED 2026-10-01 (was 12 here and in recipe.yaml;
+                                  # the live fleet has run 64 since 2026-10-01 12:23, verified by docker inspect)
 kv_cache_memory_bytes: 41000000000 # per box
 restart_policy: none               # containers do NOT survive a host reboot — ./start.sh (or ./run.sh) after every reboot
 
 [deviations]                       # everything the live fleet does differently from a stock ./run.sh of this repo
 - image: v6-spinfix (self-built by run.sh from docker/spinfix/) instead of registry v6 — busy_loop_s 1 -> 0.002 in vllm shm_broadcast; SoC temp fix, zero throughput cost (see TysAIs/gb10-vllm-ops)
+- image: the LIVE fleet runs v6-spinfix-hermes (v6-spinfix + patches/hermes-chat.patch), which this repo does not yet vendor — see [image.live_fleet] and KNOWN-ISSUES #10
 - port: 8888 (upstream example default is 8000) — set in recipe.yaml, .env PORT default here matches
 - host: 0.0.0.0 — API exposed on the LAN, not loopback
 - served-model-name: qwen3.8-flash-next (upstream example: Qwen/Qwen3.8-Flash-Next-Uncensored)
-- max-num-seqs: 12 — fleet is latency-first for chat agents; 64 is the throughput-first upstream default
+- max-num-seqs: 64 — CORRECTED 2026-10-01 (this file and recipe.yaml both said 12; live has run 64 since 2026-10-01 12:23)
 - cluster.env written by hand (fabric IPs match the vendor reference layout); setup.sh would produce the same file interactively
 - vm.compaction_proactiveness = 0 on both boxes (applied live 2026-09-28, no restart; persisted in /etc/sysctl.d/99-myllmbox-compaction.conf — see KNOWN-ISSUES.md #4, closed)
