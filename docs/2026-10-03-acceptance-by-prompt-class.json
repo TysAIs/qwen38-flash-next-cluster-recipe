@@ -1,0 +1,26 @@
+{
+  "prose_scene": {
+    "tokens": 3817,
+    "tok_s": 51.65,
+    "steps_s": 21.4,
+    "tokens_per_step": 2.414,
+    "accepted_per_step": 1.424,
+    "accepted_per_draft": 0.2856
+  },
+  "code_explain": {
+    "tokens": 4096,
+    "tok_s": 89.69,
+    "steps_s": 20.71,
+    "tokens_per_step": 4.33,
+    "accepted_per_step": 3.337,
+    "accepted_per_draft": 0.6703
+  },
+  "short_factual": {
+    "tokens": 857,
+    "tok_s": 60.55,
+    "steps_s": 20.56,
+    "tokens_per_step": 2.945,
+    "accepted_per_step": 1.99,
+    "accepted_per_draft": 0.4035
+  }
+}

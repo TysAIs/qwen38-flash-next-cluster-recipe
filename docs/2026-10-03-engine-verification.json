@@ -1,0 +1,23 @@
+{
+  "tag": "K5-engine",
+  "requests": 8,
+  "max_tokens": 1024,
+  "wall_s": 112.37,
+  "ENGINE generation_tokens": 8192.0,
+  "ENGINE tokens/s (gen/wall)": 72.9,
+  "ENGINE ITL mean ms": 47.835,
+  "ENGINE tok/s (1/ITL, per-token clock)": 20.91,
+  "ENGINE itl token count": 2230,
+  "CLIENT completion_tokens": 8192,
+  "CLIENT tok/s (median per-request window)": 76.96,
+  "CLIENT SSE chunks": 2254,
+  "tokens per SSE chunk": 3.634,
+  "ENGINE iterations": 2238,
+  "ENGINE steps/s": 19.92,
+  "ENGINE tokens/step": 4.665,
+  "drafted tokens": 11150,
+  "accepted tokens": 5973,
+  "accepted per draft": 0.5357,
+  "accepted per step": 2.669,
+  "median TTFT s": null
+}

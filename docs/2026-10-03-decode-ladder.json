@@ -1,0 +1,147 @@
+{
+  "measured": "2026-10-03",
+  "lane": "myllmbox-cluster recipe, 2x DGX Spark, image v6-spinfix-hermes",
+  "model": "myllmbox/Qwen3.8-Flash-Next-hibrid48-uncensored (abliterated)",
+  "served_name": "qwen3.8-flash-next",
+  "K": 5,
+  "method": "unique prompt nonce per request (no prefix-cache reuse); decode rate = usage completion_tokens / (last SSE chunk - first SSE chunk); temp 0; thinking off via reasoning.enabled=false; 1024 max_tokens; client on the Mac mini, not the nodes",
+  "summary": [
+    {
+      "conc": 1,
+      "reps": 3,
+      "decode_median": 76.15,
+      "decode_range": [
+        73.89,
+        76.78
+      ],
+      "decode_spread_pct": 3.8,
+      "agg_tok_s_median": 66.65,
+      "agg_range": [
+        66.65,
+        76.41
+      ],
+      "median_ttft_s": 0.296,
+      "acceptance_median": 0.5414
+    },
+    {
+      "conc": 16,
+      "reps": 2,
+      "decode_median": 24.57,
+      "decode_range": [
+        24.34,
+        24.81
+      ],
+      "decode_spread_pct": 1.9,
+      "agg_tok_s_median": 343.94,
+      "agg_range": [
+        330.31,
+        357.58
+      ],
+      "median_ttft_s": 1.501,
+      "acceptance_median": 0.5277
+    },
+    {
+      "conc": 64,
+      "reps": 2,
+      "decode_median": 10.52,
+      "decode_range": [
+        9.99,
+        11.05
+      ],
+      "decode_spread_pct": 10.1,
+      "agg_tok_s_median": 614.15,
+      "agg_range": [
+        608.59,
+        619.72
+      ],
+      "median_ttft_s": 8.853,
+      "acceptance_median": 0.5276
+    }
+  ],
+  "raw": [
+    {
+      "file": "k-decode-K5-final.json",
+      "tag": "K5-final",
+      "conc": 1,
+      "requests": 8,
+      "max_tokens": 1024,
+      "median_decode_tok_s": 76.15,
+      "mean_decode_tok_s": 69.88,
+      "median_ttft_s": 0.303,
+      "wall_based_agg_tok_s": 66.65,
+      "acceptance_per_draft": 0.5414
+    },
+    {
+      "file": "k-decode-K5-final.json",
+      "tag": "K5-final",
+      "conc": 16,
+      "requests": 32,
+      "max_tokens": 1024,
+      "median_decode_tok_s": 24.34,
+      "mean_decode_tok_s": 23.98,
+      "median_ttft_s": 1.512,
+      "wall_based_agg_tok_s": 330.31,
+      "acceptance_per_draft": 0.5215
+    },
+    {
+      "file": "k-decode-K5-final.json",
+      "tag": "K5-final",
+      "conc": 64,
+      "requests": 64,
+      "max_tokens": 1024,
+      "median_decode_tok_s": 9.99,
+      "mean_decode_tok_s": 10.08,
+      "median_ttft_s": 4.98,
+      "wall_based_agg_tok_s": 608.59,
+      "acceptance_per_draft": 0.523
+    },
+    {
+      "file": "k-decode-K5-long.json",
+      "tag": "K5-long",
+      "conc": 1,
+      "requests": 4,
+      "max_tokens": 4096,
+      "median_decode_tok_s": 76.78,
+      "mean_decode_tok_s": 77.0,
+      "median_ttft_s": 0.296,
+      "wall_based_agg_tok_s": 76.41,
+      "acceptance_per_draft": 0.5527
+    },
+    {
+      "file": "k-decode-K5-rep2.json",
+      "tag": "K5-rep2",
+      "conc": 16,
+      "requests": 32,
+      "max_tokens": 1024,
+      "median_decode_tok_s": 24.81,
+      "mean_decode_tok_s": 24.31,
+      "median_ttft_s": 1.49,
+      "wall_based_agg_tok_s": 357.58,
+      "acceptance_per_draft": 0.5339
+    },
+    {
+      "file": "k-decode-K5-rep2.json",
+      "tag": "K5-rep2",
+      "conc": 64,
+      "requests": 64,
+      "max_tokens": 1024,
+      "median_decode_tok_s": 11.05,
+      "mean_decode_tok_s": 10.69,
+      "median_ttft_s": 12.726,
+      "wall_based_agg_tok_s": 619.72,
+      "acceptance_per_draft": 0.5322
+    },
+    {
+      "file": "k-decode-K5.json",
+      "tag": "K5",
+      "conc": 1,
+      "requests": 10,
+      "max_tokens": 1024,
+      "median_decode_tok_s": 73.89,
+      "mean_decode_tok_s": 69.57,
+      "median_ttft_s": 0.275,
+      "wall_based_agg_tok_s": 66.65,
+      "acceptance_per_draft": 0.5272
+    }
+  ]
+}

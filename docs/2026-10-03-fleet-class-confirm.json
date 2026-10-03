@@ -1,0 +1,21 @@
+{
+  "prompt_class": "code+explanation (fleet-realistic)",
+  "reps": 6,
+  "max_tokens": 4096,
+  "rates": [
+    78.45,
+    81.17,
+    79.93,
+    82.44,
+    76.38,
+    77.26
+  ],
+  "median_tok_s": 79.19,
+  "range": [
+    76.38,
+    82.44
+  ],
+  "spread_pct": 7.6,
+  "steps_s_median": 20.88,
+  "accepted_per_step_median": 2.79
+}

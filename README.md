@@ -149,7 +149,7 @@ between two scheduled job waves; the WORST band is 03:00–05:00 (median 11–12
 saturating the 12-seat lane) because of stacked overnight jobs. Quiet is a property
 of the calendar's GAPS, not of a clock time.
 
-Adopted policy for the orchestrator (full plan: `the load-policy plan kept outside this repository`):
+Adopted policy for the orchestrator (full plan: the load-policy plan kept outside this repository):
 **P1** heavy work (>1,000 completion tokens) gates on `running ≤ 1 && waiting == 0`
 before each request wave; **P2** de-conflict 03:00–05:00 (move lab-sweep to 03:05,
 feeder every 30 min overnight); **P3** batch work gets `defer:quiet` and dispatches
@@ -208,6 +208,50 @@ limit of ~4 concurrent per agent profile, so one chatty profile cannot turn ever
 TTFT into 10–20 s queues; (b) ~~`./tune-host.sh` at the next maintenance reboot~~ — **applied
 live 2026-09-28** (`vm.compaction_proactiveness=0`, persisted; KNOWN-ISSUES #4 closed, post-fix
 numbers below).
+
+### 2026-10-03 — single-stream decode, quiet engine, cross-checked against engine counters
+
+Run on the live `hibrid48-uncensored` lane (K=5, 12 seats, 41 GB bf16 KV pin/box). Engine was
+**quiet** throughout: `num_requests_running` read 1 (the request itself) for the c=1 sweep, so these
+rows are not contaminated by other agents the way the rows above usually are.
+
+Method: a unique nonce per request so the prefix cache cannot flatter the result; decode rate is
+`usage.completion_tokens` over the interval between the first and last SSE chunk; temperature 0;
+thinking off; client on a Mac, never on the nodes.
+
+| concurrency | decode tok/s per stream | spread | aggregate tok/s | median TTFT | accepted/draft |
+|---|---|---|---|---|---|
+| 1 | **79** | 76.4–82.4 (7.6 %, n=6) | — | 0.30 s | 0.54 |
+| 16 | 24.6 | 24.3–24.8 (1.9 %, n=2) | 330–358 | 1.50 s | 0.53 |
+| 64 | 10.5 | 10.0–11.1 (10.1 %, n=2) | 609–620 | 8.9 s | 0.53 |
+
+Independent check from the engine's own counters (`generation_tokens_total` over wall):
+**72.9 tok/s** at c=1 against the client's 77.0 — agreement within prefill's share of wall clock.
+Receipts: `docs/2026-10-03-decode-ladder.json`, `docs/2026-10-03-engine-verification.json`.
+
+**What moves throughput here is acceptance, not cadence.** Measured across three content classes on
+one boot ([`docs/2026-10-03-acceptance-by-prompt-class.json`](docs/2026-10-03-acceptance-by-prompt-class.json)):
+
+| prompt class | tok/s | steps/s | accepted/step |
+|---|---|---|---|
+| code + explanation | 89.7 | 20.7 | 3.34 |
+| short factual | 60.6 | 20.6 | 1.99 |
+| long prose scene | 51.7 | 21.4 | 1.42 |
+
+Cadence is flat at 20.6–21.4 steps/s in every class — the engine steps at the same rate regardless of
+content, and the whole spread is how many drafted tokens survive verification. Code drafts best;
+flowing prose drafts worst. This fleet mostly sends code and structured text, which is the best-drafting
+class.
+
+**On the ~99 tok/s figure quoted from upstream's ladder:** not a like-for-like number. It comes from
+upstream's own prompt mix on the non-abliterated body, and the table above shows how much acceptance
+alone moves the result. Whether the non-abliterated body drafts better on identical prompts is not
+established here — that needs both bodies booted together, and the upstream number should not be read
+as a target for this lane.
+
+One measurement trap worth recording: `vllm:inter_token_latency_seconds` is a **sampled** histogram
+(2230 samples for 8192 generated tokens), so `1/mean(ITL)` returns 20.9 tok/s — off by 3×. Steps/s,
+tokens/step and the wall-clock token rate are the reliable engine-side figures.
 
 ## Quiet-engine performance ladder (for reference — NOT what a shared fleet sees)
 

@@ -1,0 +1,27 @@
+cell,concurrency,max_tokens,wall_s,requests,failed,tok_s_client,cadence_steps_per_s,yield_accepted_per_step,ttft_median_s,ttft_max_s,preemptions,peak_running,seats,kv_peak_fraction,empty_content,finish_reasons,load_state
+c1-512,1,512,4.649,1,0,78.72,30.97,3.361,0.201,0.201,0,2,64,0.050,0,stop,loaded
+c16-512,16,512,38.665,16,0,187.02,64.45,2.331,1.345,3.217,0,18,64,0.285,0,stop,loaded
+c16-stress-4096,16,4096,346.7,16,0,187.86,,,,0.465,0.467,0,19,64,0.379,0,stop,loaded
+
+# Pinned quiet baseline (09-29 campaign, this repo's recipe)
+baseline,1,,,5,0,67.7,21.19,2.274,0.096,,0,1,,,0,,quiet
+baseline,4,,,,0,132.4,,,,,,0,,,,,quiet
+baseline,8,,,,0,210.5,,,,,,0,,,,,quiet
+baseline,16,,,,0,249.3,,,,,,0,,,,,quiet
+
+# Verdict fields from the raw manifest
+# engine_ever_quiet,false
+# zero_running_samples,0 / 357
+# waiting_max,0
+# waiting_by_capacity_max,0
+# kv_cache_usage_perc_max,0.37915492957746477
+# preemptions_nonzero,false
+# capacity_is_the_limiter,false
+# prefix_cache_hit_rate_pct,85.91
+# same_config_noise_floor_pct,6.97
+# per_position_acceptance_ratio,RETRACTED - not a per-slot rate; survival curve P(accept>=i+1), non-increasing by construction (metrics.py:38-44). Do not read as depth dependence.
+# per_position_acceptance_ratio_true_conditional_flat,"0.729 / 0.737 / 0.760 / 0.765"
+# per_class_conditional_acceptance,"code ~flat / btree ~flat / narrative RISING +0.034 per slot (replicated, reversed-order windows)"
+# accepted_drafts_per_step,2.228  (NOT 2.92 - the 2.92 figure came from the same misread gauge)
+# tokens_per_step_incl_bonus,3.228
+# prompt_class_yield_spread,"code 3.10-3.23 | btree 2.49-2.53 | narrative 1.87-2.09 accepted drafts/step (~1.7x, load-robust)"
